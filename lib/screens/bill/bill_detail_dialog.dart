@@ -34,8 +34,10 @@ class _BillDetailDialogState extends State<BillDetailDialog> {
     const primaryColor = Color(0xFF6366F1);
     const textColor = Color(0xFF111827);
     const mutedText = Color(0xFF64748B);
-    final electricAmount = b.electricUsed * b.electricPrice;
-    final waterAmount = b.waterUsed * b.waterPrice;
+    final electricUsed = b.effectiveElectricUsed;
+    final waterUsed = b.effectiveWaterUsed;
+    final electricAmount = electricUsed * b.electricPrice;
+    final waterAmount = waterUsed * b.waterPrice;
     final paidAmount = b.isPaid ? b.totalAmount : widget.paidAmount;
     final debtAmount = (b.totalAmount - paidAmount).clamp(0, double.infinity);
 
@@ -53,14 +55,14 @@ class _BillDetailDialogState extends State<BillDetailDialog> {
             const SizedBox(height: 8),
             _detailItem(
               'Nước',
-              'Chỉ số cũ: ${b.oldWater}\nChỉ số mới: ${b.newWater}\nTiêu thụ: ${b.waterUsed} x ${_money(b.waterPrice)} = ${_money(waterAmount)}',
+              'Chỉ số cũ: ${b.oldWater}\nChỉ số mới: ${b.newWater}\nTiêu thụ: $waterUsed x ${_money(b.waterPrice)} = ${_money(waterAmount)}',
               const Color(0xFFE0F2F1),
               const Color(0xFF00897B),
             ),
             if (electricAmount > 0)
               _detailItem(
                 'Điện',
-                'Chỉ số cũ: ${b.oldElectric}\nChỉ số mới: ${b.newElectric}\nTiêu thụ: ${b.electricUsed} x ${_money(b.electricPrice)} = ${_money(electricAmount)}',
+                'Chỉ số cũ: ${b.oldElectric}\nChỉ số mới: ${b.newElectric}\nTiêu thụ: $electricUsed x ${_money(b.electricPrice)} = ${_money(electricAmount)}',
                 const Color(0xFFFFF7E6),
                 const Color(0xFFF57C00),
               ),

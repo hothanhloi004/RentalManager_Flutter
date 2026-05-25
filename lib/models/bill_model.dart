@@ -24,6 +24,15 @@ class Bill {
   bool get isUnpaid => ['CHUA_THANH_TOAN', 'UNPAID'].contains(normalizedStatus);
   bool get isPartial => ['DONG_THIEU', 'PARTIAL', 'THIEU'].contains(normalizedStatus);
   String get paymentKey => billId.isNotEmpty ? billId : id;
+  int get effectiveElectricUsed {
+    final byMeter = newElectric - oldElectric;
+    return byMeter > 0 ? byMeter : electricUsed;
+  }
+
+  int get effectiveWaterUsed {
+    final byMeter = newWater - oldWater;
+    return byMeter > 0 ? byMeter : waterUsed;
+  }
 
   Bill({
     required this.id,

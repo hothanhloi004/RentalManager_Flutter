@@ -23,6 +23,7 @@ class _ReportScreenState extends State<ReportScreen> {
   late final Stream<List<Room>> _roomsStream;
   late final Stream<List<Bill>> _billsStream;
   late final Stream<List<Payment>> _paymentsStream;
+  int _roomPieTouchedIndex = -1;
 
   @override
   void initState() {
@@ -78,6 +79,7 @@ class _ReportScreenState extends State<ReportScreen> {
                         _chartCard(
                           'T\u00ecnh tr\u1ea1ng ph\u00f2ng',
                           _buildPieChart(summary),
+                          height: 310,
                         ),
                         const SizedBox(height: 32),
                       ],
@@ -156,7 +158,7 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
-  Widget _chartCard(String title, Widget chart) {
+  Widget _chartCard(String title, Widget chart, {double height = 240}) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       padding: const EdgeInsets.all(20),
@@ -176,7 +178,7 @@ class _ReportScreenState extends State<ReportScreen> {
         children: [
           Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.onSurface)),
           const SizedBox(height: 24),
-          SizedBox(height: 240, child: chart),
+          SizedBox(height: height, child: chart),
         ],
       ),
     );
@@ -196,48 +198,67 @@ class _ReportScreenState extends State<ReportScreen> {
 
     final maxY = s.maxMonthlyPaid();
     final chartMax = maxY <= 0 ? 1.0 : maxY * 1.15;
+    final chartWidth = (months.length * 48).clamp(240, 340).toDouble();
 
-    return BarChart(
-      BarChartData(
-        alignment: BarChartAlignment.spaceAround,
-        maxY: chartMax,
-        barGroups: [
-          for (var i = 0; i < months.length; i++)
-            BarChartGroupData(
-              x: i,
-              barRods: [
-                BarChartRodData(
-                  toY: months[i].paid,
-                  color: AppTheme.primary,
-                  width: 18,
-                  borderRadius: BorderRadius.circular(4),
+    return Center(
+      child: SizedBox(
+        width: chartWidth,
+        child: BarChart(
+          BarChartData(
+            alignment: BarChartAlignment.spaceEvenly,
+            maxY: chartMax,
+            barTouchData: BarTouchData(
+              enabled: true,
+              touchTooltipData: BarTouchTooltipData(
+                getTooltipColor: (_) => const Color(0xFF475569),
+                getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                  return BarTooltipItem(
+                    _currency.format(rod.toY),
+                    const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
+                  );
+                },
+              ),
+            ),
+            barGroups: [
+              for (var i = 0; i < months.length; i++)
+                BarChartGroupData(
+                  x: i,
+                  barRods: [
+                    BarChartRodData(
+                      toY: months[i].paid,
+                      color: AppTheme.primary,
+                      width: 18,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ],
                 ),
-              ],
+            ],
+            gridData: const FlGridData(show: false),
+            titlesData: FlTitlesData(
+              leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 28,
+                  getTitlesWidget: (v, meta) {
+                    final i = v.toInt();
+                    if (i < 0 || i >= months.length) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        BillMonthUtils.chartLabel(months[i].monthKey),
+                        style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11, fontWeight: FontWeight.w700),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
-        ],
-        gridData: const FlGridData(show: false),
-        titlesData: FlTitlesData(
-          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              getTitlesWidget: (v, meta) {
-                final i = v.toInt();
-                if (i < 0 || i >= months.length) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    BillMonthUtils.chartLabel(months[i].monthKey),
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
-                  ),
-                );
-              },
-            ),
+            borderData: FlBorderData(show: false),
           ),
         ),
-        borderData: FlBorderData(show: false),
       ),
     );
   }
@@ -247,32 +268,97 @@ class _ReportScreenState extends State<ReportScreen> {
       return const Center(child: Text('Kh\u00f4ng c\u00f3 d\u1eef li\u1ec7u ph\u00f2ng'));
     }
 
-    final rented = s.rentedRooms.toDouble();
-    final vacant = s.vacantRooms.toDouble();
+    final slices = <_RoomStatusSlice>[
+      if (s.rentedRooms > 0) _RoomStatusSlice('Đang thuê', s.rentedRooms, AppTheme.primary),
+      if (s.vacantRooms > 0) _RoomStatusSlice('Trống', s.vacantRooms, const Color(0xFFE5E7EB)),
+    ];
+    final selected = _roomPieTouchedIndex >= 0 && _roomPieTouchedIndex < slices.length ? slices[_roomPieTouchedIndex] : null;
 
-    return PieChart(
-      PieChartData(
-        sectionsSpace: 4,
-        centerSpaceRadius: 44,
-        sections: [
-          if (rented > 0)
-            PieChartSectionData(
-              value: rented,
-              title: '\u0110ang thu\u00ea\n${s.rentedRooms}',
-              color: AppTheme.primary,
-              radius: 58,
-              titleStyle: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: SizedBox(
+              width: 200,
+              height: 200,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  PieChart(
+                    PieChartData(
+                      sectionsSpace: 5,
+                      centerSpaceRadius: 54,
+                      pieTouchData: PieTouchData(
+                        enabled: true,
+                        touchCallback: (event, response) {
+                          final touchedIndex = response?.touchedSection?.touchedSectionIndex ?? -1;
+                          final nextIndex = event is FlPointerExitEvent || !event.isInterestedForInteractions ? -1 : touchedIndex;
+                          if (_roomPieTouchedIndex == nextIndex || !mounted) return;
+                          setState(() => _roomPieTouchedIndex = nextIndex);
+                        },
+                      ),
+                      sections: [
+                        for (var i = 0; i < slices.length; i++)
+                          PieChartSectionData(
+                            value: slices[i].count.toDouble(),
+                            title: '',
+                            color: slices[i].color,
+                            radius: _roomPieTouchedIndex == i ? 46 : 39,
+                          ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${selected?.count ?? s.totalRooms}',
+                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: AppTheme.onSurface),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        selected == null ? 'phòng' : selected.label,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppTheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          if (vacant > 0)
-            PieChartSectionData(
-              value: vacant,
-              title: 'Tr\u1ed1ng\n${s.vacantRooms}',
-              color: const Color(0xFFE5E7EB),
-              radius: 48,
-              titleStyle: const TextStyle(color: Color(0xFF4B5563), fontSize: 11),
-            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _roomStatusLegend('Đang thuê', s.rentedRooms, AppTheme.primary),
+        const SizedBox(height: 8),
+        _roomStatusLegend('Trống', s.vacantRooms, const Color(0xFFCBD5E1)),
+      ],
+    );
+  }
+
+  Widget _roomStatusLegend(String label, int count, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.onSurface))),
+          Text('$count phòng', style: const TextStyle(fontWeight: FontWeight.w900, color: AppTheme.onSurface)),
         ],
       ),
     );
   }
+}
+
+class _RoomStatusSlice {
+  const _RoomStatusSlice(this.label, this.count, this.color);
+
+  final String label;
+  final int count;
+  final Color color;
 }

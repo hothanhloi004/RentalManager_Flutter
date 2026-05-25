@@ -118,6 +118,7 @@ class _SettingScreenState extends State<SettingScreen> {
   @override
   Widget build(BuildContext context) {
     const primaryColor = Color(0xFF6366F1);
+    final topInset = MediaQuery.of(context).padding.top;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -128,21 +129,25 @@ class _SettingScreenState extends State<SettingScreen> {
                 // Header gradient giống Android
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(8, 40, 20, 20),
+                  padding: EdgeInsets.fromLTRB(8, topInset + 10, 20, 18),
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(colors: [Color(0xFF6366F1), Color(0xFF4F46E5)]),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => Navigator.pop(context)),
                       const SizedBox(width: 4),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Cài đặt', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 24)),
-                          SizedBox(height: 2),
-                          Text('Thiết lập đơn giá và bảo mật', style: TextStyle(color: Color(0xFFC7D2FE), fontSize: 13)),
-                        ],
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('Cài đặt', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 23, height: 1.1)),
+                            SizedBox(height: 5),
+                            Text('Thiết lập đơn giá và bảo mật', style: TextStyle(color: Color(0xFFC7D2FE), fontSize: 13, height: 1.2)),
+                          ],
+                        ),
                       ),
                     ],
                   ),

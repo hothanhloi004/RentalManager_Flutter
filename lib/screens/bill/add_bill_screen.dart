@@ -21,6 +21,8 @@ class _AddBillScreenState extends State<AddBillScreen> {
   List<Room> _rooms = [];
   Setting _setting = Setting();
   bool _isLoading = false;
+  bool _isLoadingMeter = false;
+  int _meterLoadToken = 0;
 
   final _monthCtrl = TextEditingController();
   final _oldElecCtrl = TextEditingController(text: '0');
@@ -150,6 +152,44 @@ class _AddBillScreenState extends State<AddBillScreen> {
     }
   }
 
+  Future<void> _selectContract(Contract? contract) async {
+    final token = ++_meterLoadToken;
+    setState(() {
+      _selectedContract = contract;
+      _isLoadingMeter = contract != null;
+      if (contract != null) {
+        _oldElecCtrl.text = contract.lastElectric.toString();
+        _newElecCtrl.text = contract.lastElectric.toString();
+        _oldWaterCtrl.text = contract.lastWater.toString();
+        _newWaterCtrl.text = contract.lastWater.toString();
+      } else {
+        _totalAmount = 0;
+      }
+    });
+
+    if (contract == null) return;
+    _calculate();
+
+    try {
+      final meter = await _service.getLastMeterForRoom(contract.roomId);
+      if (!mounted || token != _meterLoadToken || _selectedContract?.id != contract.id) return;
+      setState(() {
+        _oldElecCtrl.text = meter.electric.toString();
+        _newElecCtrl.text = meter.electric.toString();
+        _oldWaterCtrl.text = meter.water.toString();
+        _newWaterCtrl.text = meter.water.toString();
+        _isLoadingMeter = false;
+      });
+      _calculate();
+    } catch (e) {
+      if (!mounted || token != _meterLoadToken) return;
+      setState(() => _isLoadingMeter = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không lấy được chỉ số cũ: ${_friendlyError(e)}'), backgroundColor: Colors.orange),
+      );
+    }
+  }
+
   String? _validateMonth(String? value) {
     final text = (value ?? '').trim();
     final match = RegExp(r'^(0?[1-9]|1[0-2])\/\d{4}$').hasMatch(text);
@@ -194,16 +234,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                           final room = _rooms.firstWhere((r) => r.id == c.roomId || r.roomKey == c.roomId, orElse: () => Room(id: '', roomName: '?', price: 0));
                           return DropdownMenuItem(value: c, child: Text(room.roomName));
                         }).toList(),
-                        onChanged: (v) => setState(() {
-                          _selectedContract = v;
-                          if (v != null) {
-                            _oldElecCtrl.text = v.lastElectric.toString();
-                            _newElecCtrl.text = v.lastElectric.toString();
-                            _oldWaterCtrl.text = v.lastWater.toString();
-                            _newWaterCtrl.text = v.lastWater.toString();
-                          }
-                          _calculate();
-                        }),
+                        onChanged: _selectContract,
                         validator: (v) => v == null ? 'Vui lòng chọn phòng' : null,
                       ),
                       const SizedBox(height: 16),
@@ -216,7 +247,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                     ]),
 
                     const SizedBox(height: 24),
-                    _sectionTitle('CHỈ SỐ ĐIỆN NƯỚC'),
+                    _sectionTitle(_isLoadingMeter ? 'CHỈ SỐ ĐIỆN NƯỚC - ĐANG LẤY SỐ CŨ...' : 'CHỈ SỐ ĐIỆN NƯỚC'),
                     _card([
                       Row(
                         children: [

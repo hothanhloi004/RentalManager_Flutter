@@ -34,8 +34,8 @@ class InvoicePdfHelper {
                 pw.SizedBox(height: 10),
                 pw.Text('Chi tiết thanh toán:', style: pw.TextStyle(font: ttf, fontWeight: pw.FontWeight.bold)),
                 _pdfRow(ttf, '- Tiền phòng:', fmt.format(bill.rentPrice)),
-                _pdfRow(ttf, '- Tiền điện:', fmt.format((bill.newElectric - bill.oldElectric) * bill.electricPrice)),
-                _pdfRow(ttf, '- Tiền nước:', fmt.format((bill.newWater - bill.oldWater) * bill.waterPrice)),
+                _pdfRow(ttf, '- Tiền điện:', fmt.format(bill.effectiveElectricUsed * bill.electricPrice)),
+                _pdfRow(ttf, '- Tiền nước:', fmt.format(bill.effectiveWaterUsed * bill.waterPrice)),
                 if (bill.serviceFee > 0) _pdfRow(ttf, '- Dịch vụ khác:', fmt.format(bill.serviceFee)),
                 pw.Divider(),
                 pw.Row(
