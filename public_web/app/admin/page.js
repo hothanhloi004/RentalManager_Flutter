@@ -40,6 +40,47 @@ export default function AdminDashboardPage() {
         return sum + Math.max(total - paid, 0);
     }, 0);
 
+    const valueKeys = (value) => {
+        const raw = value ?? '';
+        const text = String(raw);
+        const keys = new Set([text]);
+        const asNumber = Number(text);
+        if (!Number.isNaN(asNumber)) keys.add(String(asNumber));
+        return keys;
+    };
+
+    const findRoom = (roomKey) => {
+        const keys = valueKeys(roomKey);
+        return roomsList.find((room) => {
+            const roomKeys = [
+                room.id,
+                room.roomId,
+                room.roomKey,
+                room.name,
+                room.roomName,
+            ].flatMap((key) => [...valueKeys(key)]);
+            return roomKeys.some((key) => keys.has(key));
+        });
+    };
+
+    const roomLabel = (roomKey) => {
+        const room = findRoom(roomKey);
+        return room?.roomName || room?.name || room?.id || roomKey || '—';
+    };
+
+    const findTenant = (tenantKey) => {
+        const keys = valueKeys(tenantKey);
+        return tenantsList.find((tenant) => {
+            const tenantKeys = [
+                tenant.id,
+                tenant.tenantId,
+                tenant.tenantKey,
+                tenant.fullName,
+            ].flatMap((key) => [...valueKeys(key)]);
+            return tenantKeys.some((key) => keys.has(key));
+        });
+    };
+
     const callGemini = async (type, data) => {
         const res = await fetch('/api/gemini', {
             method: 'POST',
@@ -175,18 +216,12 @@ export default function AdminDashboardPage() {
     const nf = new Intl.NumberFormat('vi-VN');
 
     const exportBillsToExcel = () => {
-        const roomMap = {};
-        roomsList.forEach(r => roomMap[r.id] = r.roomName || r.id);
-
-        const tenantMap = {};
-        tenantsList.forEach(t => tenantMap[t.id] = { name: t.fullName, phone: t.phone });
-
         const getContractTenant = (contractId) => {
             const c = contractsList.find(c => String(c.contractId) === String(contractId) || c.id === String(contractId));
             if (!c) return { name: '', phone: '' };
-            const t = tenantMap[String(c.tenantId)];
-            const room = roomMap[String(c.roomId)] || '';
-            return { name: t?.name || '', phone: t?.phone || '', room };
+            const t = findTenant(c.tenantId);
+            const room = roomLabel(c.roomId);
+            return { name: t?.fullName || '', phone: t?.phone || '', room };
         };
 
         const nfMoney = new Intl.NumberFormat('vi-VN');
@@ -267,15 +302,10 @@ export default function AdminDashboardPage() {
         doc.text(`Tong so hoa don: ${billsToExport.length}   |   Tong no: ${new Intl.NumberFormat('vi-VN').format(totalDebt)}d`, 14, 30);
 
         // Build table rows
-        const roomMap = {};
-        roomsList.forEach(r => roomMap[r.id] = r.roomName || r.id);
-        const tenantMap = {};
-        tenantsList.forEach(t => tenantMap[t.id] = t.fullName || '');
-
         const rows = billsToExport.map((b, idx) => {
             const contract = contractsList.find(c => String(c.contractId) === String(b.contractId) || c.id === String(b.contractId));
-            const room = contract ? (roomMap[String(contract.roomId)] || '—') : '—';
-            const tenant = contract ? (tenantMap[String(contract.tenantId)] || '—') : '—';
+            const room = contract ? roomLabel(contract.roomId) : '—';
+            const tenant = contract ? (findTenant(contract.tenantId)?.fullName || '—') : '—';
             const status = b.paymentStatus === 'DONG_THIEU' ? 'Dong thieu' : 'Chua tra';
             const nf = new Intl.NumberFormat('vi-VN');
             return [
@@ -728,8 +758,8 @@ export default function AdminDashboardPage() {
                                                     {(billMonthFilter === 'ALL' ? unpaidBills : unpaidBills.filter(b => b.month === billMonthFilter)).map(b => {
                                                         // Lookup phòng và khách thuê qua hợp đồng
                                                         const contract = contractsList.find(c => String(c.contractId) === String(b.contractId) || c.id === String(b.contractId));
-                                                        const room = contract ? (roomsList.find(r => String(r.id) === String(contract.roomId))?.roomName || contract.roomId || '—') : '—';
-                                                        const tenant = contract ? (tenantsList.find(t => String(t.id) === String(contract.tenantId))?.fullName || '—') : '—';
+                                                        const room = contract ? roomLabel(contract.roomId) : '—';
+                                                        const tenant = contract ? (findTenant(contract.tenantId)?.fullName || '—') : '—';
                                                         return (
                                                             <tr key={b.id} className="hover:bg-slate-50">
                                                                 <td className="px-4 py-3 font-bold text-slate-700 text-xs">{b.month}</td>
@@ -793,10 +823,10 @@ export default function AdminDashboardPage() {
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
                                                     {contractsList.map(c => {
-                                                        const room = roomsList.find(r => r.roomId === c.roomId);
+                                                        const room = findRoom(c.roomId);
                                                         return (
                                                             <tr key={c.id} className="hover:bg-slate-50">
-                                                                <td className="px-5 py-3 font-semibold text-slate-800">{room ? room.roomName : 'Phòng #' + c.roomId}</td>
+                                                                <td className="px-5 py-3 font-semibold text-slate-800">{room?.roomName || room?.name || roomLabel(c.roomId)}</td>
                                                                 <td className="px-5 py-3 text-slate-600 font-mono">{nf.format(c.deposit)}đ</td>
                                                                 <td className="px-5 py-3 text-right">
                                                                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${c.status === 'HIEU_LUC' ? 'bg-indigo-50 text-indigo-600 border border-indigo-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>

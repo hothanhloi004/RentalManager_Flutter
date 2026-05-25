@@ -1,45 +1,13 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { initializeApp, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { cert } from 'firebase-admin/app';
+import { collectionGroup, getCountFromServer, getDocs } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
-// ─── Firebase Admin init (Server Component only) ──────────────────────────────
-function getAdminDb() {
-  if (!getApps().length) {
-    const serviceAccount = JSON.parse(
-      process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '{}'
-    );
-    if (!serviceAccount.project_id) return null; // env not configured
-    initializeApp({ credential: cert(serviceAccount) });
-  }
-  try { return getFirestore(); } catch { return null; }
-}
-
-async function fetchLiveStats() {
-  try {
-    const db = getAdminDb();
-    if (!db) throw new Error('no admin db');
-
-    const [roomsSnap, usersSnap, billsSnap] = await Promise.all([
-      db.collectionGroup('rooms').count().get(),
-      db.collection('users').count().get(),
-      db.collectionGroup('bills').count().get(),
-    ]);
-
-    const totalRooms = roomsSnap.data().count ?? 0;
-    const totalLandlords = usersSnap.data().count ?? 0;
-    const totalBills = billsSnap.data().count ?? 0;
-
-    return {
-      rooms: totalRooms > 0 ? totalRooms.toLocaleString('vi-VN') + '+' : '—',
-      landlords: totalLandlords > 0 ? totalLandlords.toLocaleString('vi-VN') + '+' : '—',
-      provinces: '63',
-      bills: totalBills > 0 ? totalBills.toLocaleString('vi-VN') + '+' : '—',
-    };
-  } catch {
-    // Fallback: env not set or Firebase Admin not configured → show dashes
-    return { rooms: '—', landlords: '—', provinces: '63', bills: '—' };
-  }
+function formatStat(value, suffix = '+') {
+  if (value === null || value === undefined) return '—';
+  return `${Number(value).toLocaleString('vi-VN')}${suffix}`;
 }
 
 const features = [
@@ -72,8 +40,54 @@ const accentMap = {
   emerald: { bg: 'bg-emerald-50', icon: 'text-emerald-600', border: 'hover:border-emerald-200', badge: 'bg-emerald-600 text-white' },
 };
 
-export default async function HomePage() {
-  const liveStats = await fetchLiveStats();
+export default function HomePage() {
+  const [liveStats, setLiveStats] = useState({
+    rooms: '—',
+    landlords: '—',
+    provinces: '63',
+    bills: '—',
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchLiveStats() {
+      try {
+        const roomsSnap = await getDocs(collectionGroup(db, 'rooms'));
+        const landlordIds = new Set();
+        roomsSnap.docs.forEach((roomDoc) => {
+          const uid = roomDoc.ref.path.split('/')[1];
+          if (uid) landlordIds.add(uid);
+        });
+
+        let totalBills = null;
+        try {
+          const billsSnap = await getCountFromServer(collectionGroup(db, 'bills'));
+          totalBills = billsSnap.data().count ?? 0;
+        } catch {
+          totalBills = null;
+        }
+
+        if (!cancelled) {
+          setLiveStats({
+            rooms: formatStat(roomsSnap.size),
+            landlords: formatStat(landlordIds.size),
+            provinces: '63',
+            bills: totalBills === null ? '—' : formatStat(totalBills),
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setLiveStats({ rooms: '—', landlords: '—', provinces: '63', bills: '—' });
+        }
+      }
+    }
+
+    fetchLiveStats();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const stats = [
     {
@@ -126,7 +140,7 @@ export default async function HomePage() {
           </h1>
 
           <p className="text-slate-500 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-            Nền tảng Quản lý và Tìm kiếm nhà trọ toàn diện. Dữ liệu từ App Android
+            Nền tảng Quản lý và Tìm kiếm nhà trọ toàn diện. Dữ liệu từ App Flutter
             của Chủ trọ đồng bộ lên Web theo thời gian thực.
           </p>
 

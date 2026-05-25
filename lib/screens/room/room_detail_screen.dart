@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import '../../models/contract_model.dart';
 import '../../models/room_model.dart';
+import '../../models/tenant_model.dart';
 import '../../services/firebase_service.dart';
 import '../../widgets/room_photo_gallery.dart';
 import '../contract/add_contract_screen.dart';
@@ -18,11 +20,13 @@ class RoomDetailScreen extends StatefulWidget {
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final _service = FirebaseService();
   late Room _currentRoom;
+  Tenant? _currentTenant;
 
   @override
   void initState() {
     super.initState();
     _currentRoom = widget.room;
+    _loadOccupancy();
   }
 
   void _editRoom() {
@@ -38,6 +42,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       final updated = rooms.where((r) => r.id == _currentRoom.id).firstOrNull;
       if (updated != null && mounted) {
         setState(() => _currentRoom = updated);
+        await _loadOccupancy();
       }
     } catch (e) {
       if (!mounted) return;
@@ -52,6 +57,10 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     const primaryColor = Color(0xFF6366F1);
     final currencyFmt = NumberFormat.currency(locale: 'vi_VN', symbol: '\u0111');
     final isRented = _currentRoom.isRented;
+    final tenantName = _currentTenant?.fullName.trim();
+    final occupancyText = isRented
+        ? (tenantName != null && tenantName.isNotEmpty ? 'Đang thuê: $tenantName' : 'Đang có người thuê')
+        : 'Chưa có người thuê';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
@@ -78,7 +87,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 16),
               decoration: BoxDecoration(
                 color: const Color(0xFFF7F7FF),
                 borderRadius: BorderRadius.circular(14),
@@ -93,7 +102,10 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                     child: const Icon(Icons.meeting_room_rounded, color: Colors.white, size: 34),
                   ),
                   const SizedBox(height: 14),
-                  Text(_currentRoom.roomName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Color(0xFF1F2937))),
+                  Text(
+                    _currentRoom.roomName,
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 24, color: Color(0xFF111827)),
+                  ),
                   const SizedBox(height: 8),
                   _statusText(_currentRoom.status),
                 ],
@@ -110,16 +122,28 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               ),
               child: Column(
                 children: [
-                  _infoRow(Icons.monetization_on_rounded, currencyFmt.format(_currentRoom.price), color: primaryColor, isBold: true),
+                  _infoRow(
+                    Icons.monetization_on_rounded,
+                    currencyFmt.format(_currentRoom.price),
+                    color: primaryColor,
+                    isBold: true,
+                    fontSize: 15,
+                  ),
                   _divider(),
-                  _infoRow(Icons.person_rounded, isRented ? 'Đang có người thuê' : 'Chưa có người thuê'),
+                  _infoRow(
+                    Icons.person_rounded,
+                    occupancyText,
+                    color: isRented ? const Color(0xFF111827) : const Color(0xFF6B7280),
+                    isBold: isRented,
+                    fontSize: 14,
+                  ),
                   if (_currentRoom.area > 0) ...[
                     _divider(),
-                    _infoRow(Icons.square_foot_rounded, 'Phòng diện tích ${_currentRoom.area} m²'),
+                    _infoRow(Icons.square_foot_rounded, 'Phòng diện tích ${_currentRoom.area} m²', fontSize: 14),
                   ],
                   if (_currentRoom.note.isNotEmpty) ...[
                     _divider(),
-                    _infoRow(Icons.notes_rounded, _currentRoom.note),
+                    _infoRow(Icons.notes_rounded, _currentRoom.note, fontSize: 14),
                   ],
                   if (!isRented) ...[
                     const SizedBox(height: 12),
@@ -165,19 +189,56 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  Widget _infoRow(IconData icon, String text, {Color color = const Color(0xFF6B7280), bool isBold = false}) {
+  Future<void> _loadOccupancy() async {
+    try {
+      final results = await Future.wait([
+        _service.getContracts().first,
+        _service.getTenants().first,
+      ]);
+      final contracts = results[0] as List<Contract>;
+      final tenants = results[1] as List<Tenant>;
+      final contract = contracts
+          .where((c) => _contractBelongsToRoom(c, _currentRoom) && c.isActive)
+          .firstOrNull;
+      final tenant = contract == null ? null : _tenantForContract(tenants, contract);
+      if (!mounted) return;
+      setState(() {
+        _currentTenant = tenant;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _currentTenant = null);
+    }
+  }
+
+  static bool _contractBelongsToRoom(Contract contract, Room room) {
+    return contract.roomId == room.id || contract.roomId == room.roomKey;
+  }
+
+  static Tenant? _tenantForContract(List<Tenant> tenants, Contract contract) {
+    return tenants.where((t) => t.id == contract.tenantId || t.tenantKey == contract.tenantId).firstOrNull;
+  }
+
+  Widget _infoRow(
+    IconData icon,
+    String text, {
+    Color color = const Color(0xFF6B7280),
+    bool isBold = false,
+    double fontSize = 13,
+  }) {
     return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 19),
-          const SizedBox(width: 10),
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               text,
               style: TextStyle(
-                color: isBold ? color : const Color(0xFF374151),
-                fontSize: 13,
-                fontWeight: isBold ? FontWeight.w800 : FontWeight.w600,
+                color: isBold ? color : const Color(0xFF1F2937),
+                fontSize: fontSize,
+                height: 1.35,
+                fontWeight: isBold ? FontWeight.w900 : FontWeight.w700,
               ),
             ),
           ),
@@ -193,7 +254,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   Widget _statusText(String status) {
     return Text(
       _statusLabel(status),
-      style: const TextStyle(color: Color(0xFF64748B), fontSize: 13, fontWeight: FontWeight.w500),
+      style: const TextStyle(color: Color(0xFF475569), fontSize: 14, fontWeight: FontWeight.w700),
     );
   }
 

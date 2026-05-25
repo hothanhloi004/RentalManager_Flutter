@@ -6,6 +6,10 @@ import { db } from '../../../../lib/firebase';
 import Link from 'next/link';
 
 const formatMoney = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
+const isVacantRoom = (room) => {
+    const status = String(room?.status || '').trim().toUpperCase();
+    return status === 'TRONG' || status === 'EMPTY' || status === 'AVAILABLE';
+};
 
 export default function RoomDetailPage() {
     const params = useParams();
@@ -102,8 +106,8 @@ export default function RoomDetailPage() {
                     <div className="lg:col-span-2 space-y-6">
                         {/* Image Gallery */}
                         <div className="bg-white p-2 rounded-3xl border border-slate-200 shadow-sm relative group overflow-hidden">
-                            <span className="absolute top-6 left-6 z-10 bg-white/90 backdrop-blur-sm border border-emerald-200 text-emerald-600 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm">
-                                Đang Trống
+                            <span className={`absolute top-6 left-6 z-10 bg-white/90 backdrop-blur-sm text-xs font-bold px-3 py-1.5 rounded-full shadow-sm border ${isVacantRoom(room) ? 'border-emerald-200 text-emerald-600' : 'border-slate-200 text-slate-500'}`}>
+                                {isVacantRoom(room) ? 'Đang Trống' : 'Đã có người thuê'}
                             </span>
                             <div className="aspect-[4/3] sm:aspect-[16/9] w-full rounded-2xl overflow-hidden relative bg-slate-100">
                                 <img src={images[currentImage]} alt="Room Image" className="w-full h-full object-cover" />
@@ -249,7 +253,8 @@ export default function RoomDetailPage() {
                                     setSending(true);
                                     try {
                                         await addDoc(collection(db, `inquiries/${uid}/requests`), {
-                                            roomId: id,
+                                            roomId: room?.roomId || room?.roomKey || id,
+                                            roomDocId: id,
                                             roomName: room?.roomName || '',
                                             name: form.name,
                                             phone: form.phone,

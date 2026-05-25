@@ -106,8 +106,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
                         final tb = b.createdAt?.millisecondsSinceEpoch ?? 0;
                         return tb.compareTo(ta);
                       });
-                    _markLoadedNotificationsRead();
-
                     final list = _filtered;
                     if (list.isEmpty) {
                       return _emptyState();
@@ -133,23 +131,18 @@ class _NotificationScreenState extends State<NotificationScreen> {
     );
   }
 
-  void _markLoadedNotificationsRead() {
-    if (_all.isEmpty) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      for (final item in _all) {
-        if (!_readStore.isRead(item.id)) {
-          _readStore.markRead(item.id);
-        }
-      }
-    });
-  }
-
   Widget _filterRow() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      child: Container(
+        height: 42,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
         child: Row(
           children: [
             _chip('Tất cả', _InquiryFilter.all),
@@ -163,21 +156,41 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   Widget _chip(String label, _InquiryFilter value) {
     final selected = _filter == value;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => setState(() => _filter = value),
-        selectedColor: AppTheme.iconPurpleBg,
-        checkmarkColor: AppTheme.primary,
-        labelStyle: TextStyle(
-          color: selected ? AppTheme.primary : AppTheme.onSurface,
-          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-          fontSize: 13,
+    return Expanded(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF64748B).withValues(alpha: 0.14),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
         ),
-        shape: StadiumBorder(
-          side: BorderSide(color: selected ? AppTheme.primary : AppTheme.divider),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => setState(() => _filter = value),
+            borderRadius: BorderRadius.circular(20),
+            child: Center(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? AppTheme.primary : const Color(0xFF475569),
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -278,18 +291,20 @@ class _InquiryCard extends StatelessWidget {
     const bodyText = Color(0xFF475569);
     const metaText = Color(0xFF64748B);
     const cardBorder = Color(0xFFE1E7F0);
+    const unreadBg = Color(0xFFF8FAFF);
+    const unreadBorder = Color(0xFF818CF8);
 
     return Container(
-        margin: const EdgeInsets.only(bottom: 10),
+        margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isRead ? Colors.white : unreadBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isRead ? cardBorder : const Color(0xFFE0E7FF), width: isRead ? 1 : 1.5),
+          border: Border.all(color: isRead ? cardBorder : unreadBorder, width: isRead ? 1 : 1.6),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF94A3B8).withValues(alpha: isRead ? 0.12 : 0.16),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+              color: const Color(0xFF64748B).withValues(alpha: isRead ? 0.10 : 0.18),
+              blurRadius: isRead ? 12 : 18,
+              offset: Offset(0, isRead ? 4 : 7),
             ),
           ],
         ),
@@ -303,11 +318,11 @@ class _InquiryCard extends StatelessWidget {
                 children: [
                   if (!isRead)
                     Container(
-                      width: 10,
-                      height: 10,
-                      margin: const EdgeInsets.only(top: 6, right: 8),
+                      width: 9,
+                      height: 9,
+                      margin: const EdgeInsets.only(top: 7, right: 8),
                       decoration: const BoxDecoration(
-                        color: Color(0xFFEF4444),
+                        color: AppTheme.primary,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -316,7 +331,7 @@ class _InquiryCard extends StatelessWidget {
                       inquiry.name.isNotEmpty ? inquiry.name : 'Khách',
                       style: TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: isRead ? FontWeight.w700 : FontWeight.w900,
                         color: strongText,
                         letterSpacing: -0.2,
                       ),
@@ -325,17 +340,17 @@ class _InquiryCard extends StatelessWidget {
                   if (!isRead)
                     Container(
                       margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEEF2FF),
-                        borderRadius: BorderRadius.circular(8),
+                        color: AppTheme.primary,
+                        borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        'MỚI',
+                        'Chưa đọc',
                         style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: AppTheme.primary,
+                          color: Colors.white,
                         ),
                       ),
                     ),
@@ -351,9 +366,16 @@ class _InquiryCard extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.home_outlined, size: 16, color: AppTheme.primary),
+                  Icon(Icons.home_outlined, size: 16, color: isRead ? AppTheme.primary : const Color(0xFF4F46E5)),
                   const SizedBox(width: 6),
-                  Text(room, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                  Text(
+                    room,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isRead ? FontWeight.w700 : FontWeight.w900,
+                      color: isRead ? AppTheme.primary : const Color(0xFF4F46E5),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
@@ -379,7 +401,7 @@ class _InquiryCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       RelativeTime.format(inquiry.createdAt),
-                      style: const TextStyle(fontSize: 11, color: metaText, fontWeight: FontWeight.w500),
+                      style: TextStyle(fontSize: 11, color: isRead ? metaText : AppTheme.primary, fontWeight: FontWeight.w700),
                     ),
                   ),
                   if (!isRead)

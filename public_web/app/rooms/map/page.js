@@ -10,6 +10,11 @@ const MOCK_HOSTELS = [
     { uid: 'demo4', hostelName: 'Trọ Bình Thạnh Xanh', landlordName: 'Anh Minh', landlordPhone: '0934567890', hostelAddress: '25 Đinh Bộ Lĩnh, Phường 26, Bình Thạnh', lat: 10.8120, lng: 106.7170, rooms: [{ roomName: 'Phòng Đơn', price: 2800000, status: 'TRONG' }] },
 ];
 
+const isVacantRoom = (room) => {
+    const status = String(room?.status || '').trim().toUpperCase();
+    return status === 'TRONG' || status === 'EMPTY' || status === 'AVAILABLE';
+};
+
 export default function MapPage() {
     const mapRef = useRef(null);
     const leafletMapRef = useRef(null);
@@ -108,7 +113,7 @@ export default function MapPage() {
                     else continue;
                 }
                 bounds.push([lat, lng]);
-                const count = (hostel.rooms || []).filter(r => r.status === 'TRONG').length;
+                const count = (hostel.rooms || []).filter(isVacantRoom).length;
                 const marker = L.marker([lat, lng], { icon: makeIcon(count > 0 ? count : '?') }).addTo(map);
                 marker.bindTooltip(`<b>${hostel.hostelName}</b><br/>${count} phòng trống`, {
                     className: 'leaflet-rental-tooltip', direction: 'top', offset: [0, -24],
@@ -127,7 +132,7 @@ export default function MapPage() {
         return () => { destroyed = true; if (leafletMapRef.current) { leafletMapRef.current.remove(); leafletMapRef.current = null; } };
     }, [loading, hostels]);
 
-    const vacantCount = hostels.reduce((s, h) => s + (h.rooms || []).filter(r => r.status === 'TRONG').length, 0);
+    const vacantCount = hostels.reduce((s, h) => s + (h.rooms || []).filter(isVacantRoom).length, 0);
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans flex flex-col">
@@ -178,7 +183,7 @@ export default function MapPage() {
                             </div>
                             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Phòng trống</h3>
                             <div className="space-y-2">
-                                {(selected.rooms || []).filter(r => r.status === 'TRONG').map((room, i) => (
+                                {(selected.rooms || []).filter(isVacantRoom).map((room, i) => (
                                     <div key={i} className="bg-white border border-slate-200 rounded-xl p-4 flex justify-between items-center hover:border-indigo-300 transition-colors">
                                         <div>
                                             <div className="font-semibold text-slate-800 text-sm">{room.roomName}</div>
@@ -190,7 +195,7 @@ export default function MapPage() {
                                         </div>
                                     </div>
                                 ))}
-                                {(selected.rooms || []).filter(r => r.status === 'TRONG').length === 0 && (
+                                {(selected.rooms || []).filter(isVacantRoom).length === 0 && (
                                     <div className="text-center py-8 text-slate-400 text-sm">Khu trọ này không còn phòng trống</div>
                                 )}
                             </div>
@@ -208,7 +213,7 @@ export default function MapPage() {
                             ) : (
                                 <div className="space-y-2">
                                     {hostels.map((h, i) => {
-                                        const count = (h.rooms || []).filter(r => r.status === 'TRONG').length;
+                                        const count = (h.rooms || []).filter(isVacantRoom).length;
                                         return (
                                             <button key={h.uid || i} onClick={() => setSelected(h)}
                                                 className="w-full text-left bg-white border border-slate-200 hover:border-indigo-400 hover:shadow-md rounded-xl p-4 flex gap-3 items-center transition-all group"

@@ -54,3 +54,9 @@ app.*.map.json
 /public_web/.env*
 /public_web/service-account.json
 /public_web/out.txt
+
+# Local analysis/build logs
+/analysis*.txt
+/analyze*.txt
+/build*_log*.txt
+/error.txt

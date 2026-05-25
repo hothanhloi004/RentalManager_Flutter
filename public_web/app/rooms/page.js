@@ -9,6 +9,11 @@ function removeAccents(str) {
     return (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
 }
 
+function isVacantRoom(room) {
+    const status = String(room?.status || '').trim().toUpperCase();
+    return status === 'TRONG' || status === 'EMPTY' || status === 'AVAILABLE';
+}
+
 // ─── Contact Modal ────────────────────────────────────────────────────────────
 function ContactModal({ room, onClose }) {
     const [form, setForm] = useState({ name: '', phone: '', note: '' });
@@ -21,7 +26,8 @@ function ContactModal({ room, onClose }) {
         setSending(true);
         try {
             await addDoc(collection(db, `inquiries/${room.uid}/requests`), {
-                roomId: room.id,
+                roomId: room.roomId || room.roomKey || room.id,
+                roomDocId: room.id,
                 roomName: room.roomName || room.name,
                 name: form.name,
                 phone: form.phone,
@@ -229,7 +235,7 @@ export default function PublicRoomsPage() {
                 const allRooms = snapshot.docs.map(d => {
                     const uid = d.ref.path.split('/')[1];
                     return { id: d.id, uid, ...d.data() };
-                }).filter(room => room.status === 'TRONG');
+                }).filter(room => isVacantRoom(room));
 
                 // Dedup: nếu cùng uid+id thì chỉ giữ 1 (lấy bản có imageUrl trước)
                 const seenKeys = new Set();
@@ -294,16 +300,7 @@ export default function PublicRoomsPage() {
                     }
                 }
 
-                if (dedupedList.length === 0) {
-                    setRooms([
-                        { id: 'mock1', uid: 'demo', roomName: 'Phòng 101 - Cao cấp', price: 3500000, images: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&q=80&w=800', note: 'Có cửa sổ thoáng mát, full nội thất, giường nệm cao cấp.', electricPrice: 3500, waterPrice: 80000, wifiPrice: 80000, hostelName: 'Trọ Cao Cấp Quận 7', landlordName: 'Ngô Lê Gia Cát', landlordPhone: '0901234567', hostelAddress: 'Nguyễn Thị Thập, P. Tân Phong, Quận 7' },
-                        { id: 'mock2', uid: 'demo2', roomName: 'Studio Mini Tâm Đôn', price: 4200000, images: 'https://images.unsplash.com/photo-1502672260266-1c1de2d9d000?auto=format&fit=crop&q=80&w=800', note: 'Cửa sổ lớn, ban công, máy giặt riêng, giờ giấc tự do.', electricPrice: 4000, waterPrice: 100000, wifiPrice: 0, hostelName: 'Tâm Đôn Apart', landlordName: 'Trần Văn Tâm', landlordPhone: '0912345678', hostelAddress: 'Hẻm 12 Thích Quảng Đức, Quận Phú Nhuận' },
-                        { id: 'mock3', uid: 'demo3', roomName: 'Phòng Trọ Sinh Viên', price: 2000000, images: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&q=80&w=800', note: 'Khu an ninh, gần siêu thị CoopMart, phù hợp sinh viên.', electricPrice: 3500, waterPrice: 70000, wifiPrice: 60000, serviceFee: 30000, hostelName: 'Trọ Làng Đại Học', landlordName: 'Cô Nụ', landlordPhone: '0978901234', hostelAddress: 'Khu phố 6, Linh Trung, Thủ Đức' },
-                        { id: 'mock4', uid: 'demo4', roomName: 'Phòng Đơn Bình Thạnh', price: 2800000, images: 'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?auto=format&fit=crop&q=80&w=800', note: 'Gần chợ, yên tĩnh, có máy lạnh và tủ lạnh.', electricPrice: 3500, waterPrice: 60000, wifiPrice: 50000, hostelName: 'Trọ Bình Thạnh Xanh', landlordName: 'Anh Minh', landlordPhone: '0934567890', hostelAddress: '25 Đinh Bộ Lĩnh, Phường 26, Bình Thạnh' },
-                    ]);
-                } else {
-                    setRooms(dedupedList);
-                }
+                setRooms(dedupedList);
             } catch (e) {
                 console.error('Lỗi xem phòng', e);
             } finally {
