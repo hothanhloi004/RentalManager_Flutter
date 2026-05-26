@@ -15,6 +15,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
   late TextEditingController _nameCtrl, _priceCtrl, _noteCtrl;
   final _service = FirebaseService();
   bool _isLoading = false;
+  late String _status;
 
   @override
   void initState() {
@@ -23,6 +24,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
     _nameCtrl = TextEditingController(text: r?.roomName ?? '');
     _priceCtrl = TextEditingController(text: r != null ? PriceInputFormatter.format(r.price) : '');
     _noteCtrl = TextEditingController(text: r?.note ?? '');
+    _status = r?.status ?? 'TRONG';
   }
 
   @override
@@ -37,11 +39,18 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
+      if (widget.room != null && _status != 'DANG_THUE') {
+        final hasActiveContract = await _service.roomHasActiveContract(widget.room!.roomKey);
+        if (hasActiveContract) {
+          throw Exception('Phòng đang có hợp đồng hiệu lực, không thể đổi sang Trống/Bảo trì.');
+        }
+      }
+
       final room = Room(
         id: widget.room?.id ?? '',
         roomName: _nameCtrl.text.trim(),
         price: PriceInputFormatter.parse(_priceCtrl.text),
-        status: widget.room?.status ?? 'TRONG',
+        status: _status,
         note: _noteCtrl.text.trim(),
         floor: widget.room?.floor ?? 0,
         area: widget.room?.area ?? 0,
@@ -123,6 +132,21 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
               ),
+              const SizedBox(height: 16),
+              const Text(
+                'Trạng thái phòng',
+                style: TextStyle(color: Color(0xFF6B7280), fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _statusChoice('TRONG', 'Trống', const Color(0xFFDCFCE7), const Color(0xFF166534)),
+                  _statusChoice('DANG_THUE', 'Đang thuê', const Color(0xFFEDE9FE), primaryColor),
+                  _statusChoice('BAO_TRI', 'Bảo trì', const Color(0xFFFEF3C7), const Color(0xFF92400E)),
+                ],
+              ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -144,6 +168,25 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _statusChoice(String value, String label, Color selectedBg, Color selectedFg) {
+    final selected = _status.trim().toUpperCase() == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() => _status = value),
+      showCheckmark: false,
+      backgroundColor: const Color(0xFFF9FAFB),
+      selectedColor: selectedBg,
+      side: BorderSide(color: selected ? selectedFg.withValues(alpha: 0.35) : const Color(0xFFE5E7EB)),
+      labelStyle: TextStyle(
+        color: selected ? selectedFg : const Color(0xFF4B5563),
+        fontWeight: FontWeight.w800,
+        fontSize: 12,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
     );
   }
 }
