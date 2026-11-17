@@ -107,9 +107,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
                         rooms.sort((a, b) => b.id.compareTo(a.id));
 
                         if (_currentFilter != 'ALL') {
-                          if (_currentFilter == 'rented') rooms = rooms.where((r) => r.isRented).toList();
-                          else if (_currentFilter == 'empty') rooms = rooms.where((r) => r.isEmpty).toList();
-                          else rooms = rooms.where((r) => r.status == _currentFilter).toList();
+                          if (_currentFilter == 'rented') { rooms = rooms.where((r) => r.isRented).toList(); }
+                          else if (_currentFilter == 'empty') { rooms = rooms.where((r) => r.isEmpty).toList(); }
+                          else { rooms = rooms.where((r) => r.status == _currentFilter).toList(); }
                         }
                         if (_searchQuery.isNotEmpty) {
                           rooms = rooms.where((r) {
@@ -137,7 +137,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(16),
-                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,

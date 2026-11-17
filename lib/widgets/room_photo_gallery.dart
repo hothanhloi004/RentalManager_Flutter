@@ -433,7 +433,7 @@ class _RoomPhotoGalleryState extends State<RoomPhotoGallery> {
                 child: Image.network(
                   _webImageUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (context, error, stackTrace) => Container(
                     color: Colors.grey.shade200,
                     child: const Icon(Icons.broken_image_outlined),
                   ),

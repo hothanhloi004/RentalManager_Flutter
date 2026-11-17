@@ -1,11 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/inquiry_model.dart';
+import '../../models/room_model.dart';
+import '../../models/tenant_model.dart';
 import '../../services/firebase_service.dart';
 import '../../services/inquiry_read_store.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/relative_time.dart';
 import '../../widgets/gradient_sub_page_header.dart';
+import '../contract/add_contract_screen.dart';
 
 enum _InquiryFilter { all, unread, read }
 
@@ -21,6 +25,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   final _readStore = InquiryReadStore.instance;
   _InquiryFilter _filter = _InquiryFilter.all;
   List<Inquiry> _all = [];
+  bool _markedInitialListAsRead = false;
 
   @override
   void initState() {
@@ -65,7 +70,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
             children: [
               GradientSubPageHeader(
                 title: 'Thông báo',
-                subtitle: 'Yêu cầu xem phòng từ khách',
+                subtitle: 'Khách hỏi phòng & Báo sửa chữa',
                 trailing: OutlinedButton(
                   onPressed: () => _confirmClearAll(uid),
                   style: ButtonStyle(
@@ -100,12 +105,24 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
                     _all = snapshot.data!.docs
                         .map((d) => Inquiry.fromFirestore(d.data(), d.id))
+                        .where((inq) => !inq.isReport)
                         .toList()
                       ..sort((a, b) {
                         final ta = a.createdAt?.millisecondsSinceEpoch ?? 0;
                         final tb = b.createdAt?.millisecondsSinceEpoch ?? 0;
                         return tb.compareTo(ta);
                       });
+
+                    // Màn hình này là nơi chủ trọ đọc danh sách yêu cầu.
+                    // Đánh dấu các yêu cầu hiện có sau khi danh sách đã hiển thị
+                    // để badge trên Dashboard không còn báo số cũ.
+                    if (!_markedInitialListAsRead && _all.isNotEmpty) {
+                      _markedInitialListAsRead = true;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted) return;
+                        _readStore.markAllRead(_all.map((inquiry) => inquiry.id));
+                      });
+                    }
                     final list = _filtered;
                     if (list.isEmpty) {
                       return _emptyState();
@@ -119,6 +136,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
                         isRead: _readStore.isRead(list[index].id),
                         onMarkRead: () => _readStore.markRead(list[index].id),
                         onDelete: () => _deleteOne(uid, list[index]),
+                        onConvertToContract: () => _convertToContract(list[index]),
+                        onUpdateRepair: () => _showUpdateRepairDialog(uid, list[index]),
                       ),
                     );
                   },
@@ -269,6 +288,167 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
     await batch.commit();
   }
+
+  Future<void> _convertToContract(Inquiry inquiry) async {
+    _readStore.markRead(inquiry.id);
+    try {
+      final results = await Future.wait([
+        _service.getTenants().first,
+        _service.getRooms().first,
+      ]);
+      final tenants = results[0] as List<Tenant>;
+      final rooms = results[1] as List<Room>;
+
+      final cleanPhone = inquiry.phone.replaceAll(RegExp(r'[^\d]'), '');
+      Tenant? matchedTenant = tenants.where((t) {
+        final tPhone = t.phone.replaceAll(RegExp(r'[^\d]'), '');
+        return cleanPhone.isNotEmpty && tPhone == cleanPhone;
+      }).firstOrNull;
+
+      String tenantKey;
+      if (matchedTenant != null) {
+        tenantKey = matchedTenant.tenantKey;
+      } else {
+        tenantKey = await _service.addTenant(
+          Tenant(
+            id: '',
+            fullName: inquiry.name.trim().isNotEmpty ? inquiry.name.trim() : 'Khách thuê mới',
+            phone: inquiry.phone.trim(),
+            cccd: '',
+            address: '',
+          ),
+        );
+      }
+
+      Room? matchedRoom = rooms.where((r) {
+        if (inquiry.roomId.isNotEmpty && (r.id == inquiry.roomId || r.roomKey == inquiry.roomId)) return true;
+        if (inquiry.roomDocId.isNotEmpty && r.id == inquiry.roomDocId) return true;
+        return r.roomName.trim().toLowerCase() == inquiry.roomName.trim().toLowerCase();
+      }).firstOrNull;
+
+      if (!mounted) return;
+      if (matchedRoom != null && !matchedRoom.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã lưu khách "${inquiry.name}", nhưng ${matchedRoom.roomName} hiện không còn trống.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AddContractScreen(
+            roomId: (matchedRoom != null && matchedRoom.isEmpty) ? matchedRoom.roomKey : null,
+            tenantId: tenantKey,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _showUpdateRepairDialog(String uid, Inquiry item) async {
+    _readStore.markRead(item.id);
+    final replyCtrl = TextEditingController(text: item.landlordReply);
+    String selectedStatus = item.repairStatus.toUpperCase() == 'DONE' ? 'DONE' : 'IN_PROGRESS';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Xử lý sửa chữa · ${item.roomName}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Hạng mục: ${item.category.isNotEmpty ? item.category : "Sửa chữa"}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              const SizedBox(height: 6),
+              Text(item.note, style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
+              const SizedBox(height: 14),
+              const Text('Trạng thái xử lý:', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('🔧 Đang sửa chữa'),
+                    selected: selectedStatus == 'IN_PROGRESS',
+                    onSelected: (_) => setDialogState(() => selectedStatus = 'IN_PROGRESS'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('✅ Đã hoàn thành'),
+                    selected: selectedStatus == 'DONE',
+                    onSelected: (_) => setDialogState(() => selectedStatus = 'DONE'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: replyCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Phản hồi cho khách thuê (hiển thị trên Web)',
+                  hintText: 'VD: Chiều 15h thợ điện qua kiểm tra nhé',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Cập nhật')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    final reply = replyCtrl.text.trim();
+    try {
+      final payload = {
+        'repairStatus': selectedStatus,
+        'status': selectedStatus,
+        'landlordReply': reply,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      await FirebaseFirestore.instance
+          .collection('inquiries')
+          .doc(uid)
+          .collection('requests')
+          .doc(item.id)
+          .update(payload);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('maintenance')
+          .doc(item.id)
+          .set({
+        'type': 'MAINTENANCE',
+        'roomName': item.roomName,
+        'roomId': item.roomId,
+        'name': item.name,
+        'phone': item.phone,
+        'category': item.category,
+        'priority': item.priority,
+        'description': item.note,
+        'note': item.note,
+        ...payload,
+      }, SetOptions(merge: true));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã cập nhật trạng thái sửa chữa!'), backgroundColor: Color(0xFF16A34A)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+      );
+    }
+  }
 }
 
 class _InquiryCard extends StatelessWidget {
@@ -276,12 +456,16 @@ class _InquiryCard extends StatelessWidget {
   final bool isRead;
   final VoidCallback onMarkRead;
   final VoidCallback onDelete;
+  final VoidCallback onConvertToContract;
+  final VoidCallback onUpdateRepair;
 
   const _InquiryCard({
     required this.inquiry,
     required this.isRead,
     required this.onMarkRead,
     required this.onDelete,
+    required this.onConvertToContract,
+    required this.onUpdateRepair,
   });
 
   @override
@@ -383,16 +567,101 @@ class _InquiryCard extends StatelessWidget {
                 children: [
                   const Icon(Icons.phone_outlined, size: 16, color: AppTheme.onSurfaceVariant),
                   const SizedBox(width: 6),
-                  Text(inquiry.phone, style: const TextStyle(fontSize: 13, color: bodyText, fontWeight: FontWeight.w500)),
+                  Expanded(
+                    child: Text(inquiry.phone, style: const TextStyle(fontSize: 13, color: bodyText, fontWeight: FontWeight.w500)),
+                  ),
+                  if (inquiry.phone.trim().isNotEmpty) ...[
+                    TextButton.icon(
+                      onPressed: () {
+                        onMarkRead();
+                        launchUrl(Uri(scheme: 'tel', path: inquiry.phone.trim()));
+                      },
+                      icon: const Icon(Icons.call_outlined, size: 14),
+                      label: const Text('Gọi', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.primary,
+                        backgroundColor: const Color(0xFFEDEBFF),
+                        minimumSize: const Size(0, 28),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    TextButton.icon(
+                      onPressed: () {
+                        onMarkRead();
+                        final digits = inquiry.phone.replaceAll(RegExp(r'[^\d]'), '');
+                        final zalo = digits.startsWith('0') ? '84${digits.substring(1)}' : digits;
+                        launchUrl(Uri.parse('https://zalo.me/$zalo'), mode: LaunchMode.externalApplication);
+                      },
+                      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14),
+                      label: const Text('Zalo', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF0F766E),
+                        backgroundColor: const Color(0xFFCCFBF1),
+                        minimumSize: const Size(0, 28),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ],
                 ],
               ),
+              if (inquiry.isMaintenance) ...[
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '🔧 Báo sửa chữa: ${inquiry.category.isNotEmpty ? inquiry.category : "Thiết bị"}',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: inquiry.repairStatus.toUpperCase() == 'DONE'
+                            ? const Color(0xFFDCFCE7)
+                            : const Color(0xFFE0F2FE),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        inquiry.repairStatus.toUpperCase() == 'DONE'
+                            ? 'Đã hoàn thành'
+                            : (inquiry.repairStatus.toUpperCase() == 'IN_PROGRESS' ? 'Đang sửa chữa' : 'Chờ xử lý'),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: inquiry.repairStatus.toUpperCase() == 'DONE'
+                              ? const Color(0xFF166534)
+                              : const Color(0xFF0369A1),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               if (inquiry.note.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Lời nhắn: ${inquiry.note}',
-                  maxLines: 2,
+                  inquiry.isMaintenance ? 'Mô tả sự cố: ${inquiry.note}' : 'Lời nhắn: ${inquiry.note}',
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 13, color: bodyText, height: 1.35),
+                ),
+              ],
+              if (inquiry.landlordReply.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '💬 Phản hồi: ${inquiry.landlordReply}',
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF4F46E5), fontWeight: FontWeight.w700),
                 ),
               ],
               const SizedBox(height: 10),
@@ -413,6 +682,33 @@ class _InquiryCard extends StatelessWidget {
                         minimumSize: const Size(0, 32),
                       ),
                       child: Text('Đánh dấu đã đọc', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    ),
+                  const SizedBox(width: 6),
+                  if (inquiry.isMaintenance)
+                    FilledButton.icon(
+                      onPressed: onUpdateRepair,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFD97706),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.build_circle_outlined, size: 15),
+                      label: const Text('Cập nhật sửa chữa', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                    )
+                  else
+                    FilledButton.icon(
+                      onPressed: onConvertToContract,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.assignment_turned_in_outlined, size: 15),
+                      label: const Text('Nhận khách & Lập HĐ', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
                     ),
                 ],
               ),

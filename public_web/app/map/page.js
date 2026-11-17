@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import crawledData from '../../data/crawled_data_full.json';
 
 const formatMoney = (val) => val ? new Intl.NumberFormat('vi-VN').format(Math.round(val)) + 'đ' : '—';
+const removeAccents = (str) => (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
 
 // Toạ độ trung tâm 63 tỉnh thành Việt Nam
 const PROVINCE_COORDS = {
@@ -125,7 +126,10 @@ export default function DarkLeafletMapPage() {
         return list;
     }, [provinces, search, filter, sortBy]);
 
-    useEffect(() => setMounted(true), []);
+    useEffect(() => {
+        const timer = setTimeout(() => setMounted(true), 0);
+        return () => clearTimeout(timer);
+    }, []);
 
     useEffect(() => {
         if (!mounted || !mapRef.current || typeof window === 'undefined') return;
@@ -382,7 +386,10 @@ export default function DarkLeafletMapPage() {
                 <aside className="w-80 lg:w-96 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 z-40">
                     <div className="p-4 space-y-4 border-b border-slate-100">
                         <div className="flex items-center justify-between mt-1">
-                            <h2 className="text-base font-extrabold text-slate-800">Giá thuê theo tỉnh</h2>
+                            <div>
+                                <h2 className="text-base font-extrabold text-slate-800">Giá thuê theo tỉnh</h2>
+                                <p className="text-[11px] text-slate-400 font-medium mt-0.5">Dữ liệu định kỳ 3-6 tháng · Đang mở rộng cấp Quận/Huyện</p>
+                            </div>
                             <button onClick={exportProvincesToPDF}
                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all">
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>

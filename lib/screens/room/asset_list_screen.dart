@@ -91,7 +91,7 @@ class _AssetListScreenState extends State<AssetListScreen> {
                   if (ctx.mounted) Navigator.pop(ctx);
                 } catch (e) {
                   if (!ctx.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(ctx).showSnackBar(
                     SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
                   );
                 }
@@ -133,7 +133,7 @@ class _AssetListScreenState extends State<AssetListScreen> {
           return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: assets.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               final a = assets[index];
               return Container(

@@ -1,27 +1,58 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Cho phép đọc danh sách phòng công khai (áp dụng cho cả collectionGroup)
+
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isLoggedIn() && request.auth.uid == userId;
+    }
+
+    function isSystemAdmin() {
+      return isLoggedIn()
+        && exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.active == true
+        && get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role in ['ADMIN', 'SUPER_ADMIN'];
+    }
+
+    // ── Quyền Admin Hệ thống ────────────────────────────────────────────────
+    match /roles/{userId} {
+      allow read: if isLoggedIn() && (request.auth.uid == userId || isSystemAdmin());
+      allow write: if isSystemAdmin();
+    }
+
+    // ── Dữ liệu nghiệp vụ của Chủ trọ (App Flutter ghi vào đây) ───────────
+    // Chủ trọ (đã đăng nhập, đúng uid) được đọc/ghi toàn bộ dữ liệu của mình.
+    // Admin hệ thống được đọc/ghi tất cả để kiểm duyệt.
+    match /users/{userId}/maintenance/{ticketId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().size() <= 20;
+      allow update, delete: if isOwner(userId) || isSystemAdmin();
+    }
+
+    match /users/{userId}/{document=**} {
+      allow read: if true; // website public có thể đọc phòng trống
+      allow write: if isOwner(userId) || isSystemAdmin();
+    }
+
+    // ── Phòng trống public: cho phép đọc qua collectionGroup ───────────────
     match /{path=**}/rooms/{roomId} {
       allow read: if true;
+      allow write: if isSystemAdmin();
     }
 
-    // 2. Quản lý dữ liệu người dùng (Chủ nhà)
-    // Cho phép chủ nhà quản lý toàn bộ dữ liệu dưới /users/{userId}/...
-    match /users/{userId}/{document=**} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // 3. Quản lý yêu cầu thuê phòng (Inquiries)
+    // ── Yêu cầu liên hệ & sửa chữa từ website ─────────────────────────────
     match /inquiries/{landlordId}/requests/{requestId} {
-      allow create: if true;
-      allow read, update, delete: if request.auth != null && request.auth.uid == landlordId;
+      allow read: if true;
+      allow create: if request.resource.data.keys().size() <= 20;
+      allow update, delete: if isLoggedIn() && (request.auth.uid == landlordId || isSystemAdmin());
     }
 
-    // 4. Mặc định: Cho phép những người đã đăng nhập thao tác với các vùng dữ liệu khác
+    // ── Fallback: các collection khác chỉ Admin hoặc chủ tài khoản ─────────
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSystemAdmin();
     }
   }
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/bill_model.dart';
 import '../../models/room_model.dart';
 import '../../models/setting_model.dart';
@@ -95,7 +97,6 @@ class _BillDetailDialogState extends State<BillDetailDialog> {
             const SizedBox(height: 12),
             OutlinedButton(
               onPressed: () => setState(() => _showQR = !_showQR),
-              child: Text(_showQR ? 'Ẩn mã QR' : 'Tạo mã QR'),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 34),
                 foregroundColor: primaryColor,
@@ -103,6 +104,7 @@ class _BillDetailDialogState extends State<BillDetailDialog> {
                 shape: const StadiumBorder(),
                 side: const BorderSide(color: Color(0xFFE5E7EB)),
               ),
+              child: Text(_showQR ? 'Ẩn mã QR' : 'Tạo mã QR'),
             ),
             if (_showQR) ...[
               const SizedBox(height: 10),
@@ -132,7 +134,7 @@ class _BillDetailDialogState extends State<BillDetailDialog> {
                           url,
                           height: 190,
                           fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const Padding(
+                          errorBuilder: (context, error, stackTrace) => const Padding(
                             padding: EdgeInsets.all(20),
                             child: Text('Không tải được mã QR. Kiểm tra mã ngân hàng và số tài khoản.', textAlign: TextAlign.center),
                           ),
@@ -146,27 +148,86 @@ class _BillDetailDialogState extends State<BillDetailDialog> {
               ),
             ],
             const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: () => InvoicePdfHelper.generateAndShare(b, widget.room, widget.tenant),
-              child: const Text('Xuất PDF / Chia sẻ hóa đơn'),
+            ElevatedButton.icon(
+              onPressed: () => _sendZaloReminder(b, paidAmount, debtAmount),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 36),
+                backgroundColor: const Color(0xFF0284C7),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                shape: const StadiumBorder(),
+              ),
+              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+              label: const Text('Nhắc nợ Zalo (Tự chép nội dung HĐ)'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => InvoicePdfHelper.generateAndShare(b, widget.room, widget.tenant, paidAmount: paidAmount),
               style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 34),
+                minimumSize: const Size(double.infinity, 36),
                 foregroundColor: primaryColor,
                 textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                 shape: const StadiumBorder(),
                 side: const BorderSide(color: Color(0xFFE5E7EB)),
               ),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => InvoicePdfHelper.generateAndShare(b, widget.room, widget.tenant),
-              style: TextButton.styleFrom(foregroundColor: primaryColor, padding: EdgeInsets.zero),
-              child: const Text('Chia sẻ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+              label: const Text('Xuất PDF / Chia sẻ hóa đơn'),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _sendZaloReminder(Bill b, double paidAmount, double debtAmount) async {
+    final setting = await _settingFuture;
+    final electricUsed = b.effectiveElectricUsed;
+    final waterUsed = b.effectiveWaterUsed;
+    final electricAmount = electricUsed * b.electricPrice;
+    final waterAmount = waterUsed * b.waterPrice;
+
+    final buffer = StringBuffer()
+      ..writeln('📋 THÔNG BÁO TIỀN PHÒNG THÁNG ${b.month}')
+      ..writeln('Phòng: ${widget.room.roomName}')
+      ..writeln('Khách thuê: ${widget.tenant.fullName}')
+      ..writeln('--------------------------')
+      ..writeln('• Tiền phòng: ${_money(b.rentPrice)}')
+      ..writeln('• Điện: ${b.oldElectric} -> ${b.newElectric} ($electricUsed kWh) = ${_money(electricAmount)}')
+      ..writeln('• Nước: ${b.oldWater} -> ${b.newWater} ($waterUsed khối) = ${_money(waterAmount)}');
+    if (b.serviceFee > 0) {
+      buffer.writeln('• Phí dịch vụ: ${_money(b.serviceFee)}');
+    }
+    buffer
+      ..writeln('--------------------------')
+      ..writeln('💰 TỔNG CỘNG: ${_money(b.totalAmount)}');
+    if (paidAmount > 0) {
+      buffer.writeln('✅ Đã thanh toán: ${_money(paidAmount)}');
+    }
+    buffer.writeln('❗ CÒN CẦN THANH TOÁN: ${_money(debtAmount)}');
+    if (setting.bankAccount.trim().isNotEmpty) {
+      buffer
+        ..writeln('--------------------------')
+        ..writeln('🏦 Chuyển khoản: ${setting.bankCode.toUpperCase()} - ${setting.bankAccount.trim()}')
+        ..writeln('Chủ TK: ${setting.landlordName.isNotEmpty ? setting.landlordName : "Chủ nhà"}')
+        ..writeln('Nội dung: Thanh toan ${widget.room.roomName} ${b.month}');
+    }
+
+    await Clipboard.setData(ClipboardData(text: buffer.toString()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Đã sao chép chi tiết hóa đơn vào bộ nhớ tạm! Chỉ cần Dán (Paste) vào Zalo.'),
+        backgroundColor: Color(0xFF0284C7),
+      ),
+    );
+
+    final digits = widget.tenant.phone.replaceAll(RegExp(r'\D'), '');
+    if (digits.isNotEmpty) {
+      final zaloPhone = digits.startsWith('84') ? '0${digits.substring(2)}' : digits;
+      final uri = Uri.parse('https://zalo.me/$zaloPhone');
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Widget _detailItem(String title, String desc, Color bg, Color textColor) {

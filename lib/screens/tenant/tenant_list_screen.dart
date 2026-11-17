@@ -86,7 +86,7 @@ class _TenantListScreenState extends State<TenantListScreen> {
                     return ListView.separated(
                       padding: const EdgeInsets.only(top: 8, bottom: 88),
                       itemCount: list.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1, indent: 58, endIndent: 10, color: Color(0xFFE5E7EB)),
+                      separatorBuilder: (context, index) => const Divider(height: 1, indent: 58, endIndent: 10, color: Color(0xFFE5E7EB)),
                       itemBuilder: (ctx, i) {
                         final t = list[i];
                         return SizedBox(
@@ -134,10 +134,18 @@ class _TenantListScreenState extends State<TenantListScreen> {
                                     ),
                                   ),
                                   IconButton(
+                                    tooltip: 'Gọi điện',
                                     icon: const Icon(Icons.phone_in_talk_rounded, color: primaryColor, size: 21),
                                     onPressed: () => launchUrl(Uri.parse('tel:${t.phone}')),
                                     padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Xóa khách thuê',
+                                    icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 20),
+                                    onPressed: () => _confirmDeleteTenant(t),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                   ),
                                 ],
                               ),

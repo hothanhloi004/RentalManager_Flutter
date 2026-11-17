@@ -143,7 +143,7 @@ class _TenantPhotoGalleryState extends State<TenantPhotoGallery> {
                   child: Image.network(
                     url,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: Colors.white, size: 48),
+                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image_outlined, color: Colors.white, size: 48),
                   ),
                 ),
               ),
@@ -297,7 +297,7 @@ class _TenantPhotoGalleryState extends State<TenantPhotoGallery> {
                   child: const Center(child: CircularProgressIndicator(strokeWidth: 2, color: _primary)),
                 );
               },
-              errorBuilder: (_, __, ___) => Container(
+              errorBuilder: (context, error, stackTrace) => Container(
                 color: const Color(0xFFF3F4F6),
                 child: const Icon(Icons.broken_image_outlined, color: Color(0xFF94A3B8)),
               ),

@@ -15,7 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passCtrl = TextEditingController();
   final _rePassCtrl = TextEditingController();
   bool _loading = false;
-  bool _rememberMe = false;
+  bool _rememberMe = true;
   bool _obscure = true;
   bool _isLoginMode = true;
 
@@ -35,7 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _loadRememberLogin() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted) setState(() => _rememberMe = prefs.getBool('remember_login') ?? false);
+    if (mounted) setState(() => _rememberMe = prefs.getBool('remember_login') ?? true);
   }
 
   Future<void> _saveRememberLogin() async {

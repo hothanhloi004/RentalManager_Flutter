@@ -8,7 +8,7 @@ import Link from 'next/link';
 const formatMoney = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
 const isVacantRoom = (room) => {
     const status = String(room?.status || '').trim().toUpperCase();
-    return status === 'TRONG' || status === 'EMPTY' || status === 'AVAILABLE';
+    return status === 'TRONG' || status === 'EMPTY' || status === 'AVAILABLE' || status === '';
 };
 
 export default function RoomDetailPage() {
@@ -35,7 +35,12 @@ export default function RoomDetailPage() {
                     setLoading(false);
                     return;
                 }
-                setRoom({ id: roomDoc.id, ...roomDoc.data() });
+                const data = roomDoc.data();
+                if (data.adminHidden === true || !isVacantRoom(data)) {
+                    setLoading(false);
+                    return;
+                }
+                setRoom({ id: roomDoc.id, ...data });
 
                 // Fetch settings
                 const settingsDoc = await getDoc(doc(db, `users/${uid}/settings/config`));
@@ -46,7 +51,6 @@ export default function RoomDetailPage() {
                 }
 
                 // Set images from Firestore (ImgBB URLs)
-                const data = roomDoc.data();
                 const roomImages = data.imageUrl || data.imgUrl || data.images || data.image;
                 if (roomImages) {
                     setImages(Array.isArray(roomImages) ? roomImages : [roomImages]);
@@ -131,7 +135,26 @@ export default function RoomDetailPage() {
                         {/* Room Info */}
                         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
                             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 mb-2">{room.roomName || 'Phòng Trống'}</h1>
-                            <div className="text-2xl font-black text-indigo-600 mb-6">{formatMoney(room.price)}<span className="text-base text-slate-500 font-semibold">đ / tháng</span></div>
+                            <div className="text-2xl font-black text-indigo-600 mb-4">{formatMoney(room.price)}<span className="text-base text-slate-500 font-semibold">đ / tháng</span></div>
+                            {(room.area > 0 || room.floor > 0 || (Array.isArray(room.amenities) && room.amenities.length > 0)) && (
+                                <div className="flex flex-wrap gap-2 mb-6">
+                                    {room.area > 0 && (
+                                        <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full text-xs font-bold">
+                                            📐 Diện tích: {room.area} m²
+                                        </span>
+                                    )}
+                                    {room.floor > 0 && (
+                                        <span className="px-3 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-full text-xs font-bold">
+                                            🏢 Tầng {room.floor}
+                                        </span>
+                                    )}
+                                    {Array.isArray(room.amenities) && room.amenities.map((am, idx) => (
+                                        <span key={idx} className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full text-xs font-bold">
+                                            ✓ {am}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
 
                             <div className="space-y-6">
                                 <div>

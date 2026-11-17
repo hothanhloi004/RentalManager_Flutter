@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { db } from '../../../lib/firebase';
 import { collectionGroup, getDocs, query, doc, getDoc } from 'firebase/firestore';
 
@@ -12,7 +13,7 @@ const MOCK_HOSTELS = [
 
 const isVacantRoom = (room) => {
     const status = String(room?.status || '').trim().toUpperCase();
-    return status === 'TRONG' || status === 'EMPTY' || status === 'AVAILABLE';
+    return room?.adminHidden !== true && (status === 'TRONG' || status === 'EMPTY' || status === 'AVAILABLE' || status === '');
 };
 
 export default function MapPage() {
@@ -199,9 +200,9 @@ export default function MapPage() {
                                     <div className="text-center py-8 text-slate-400 text-sm">Khu trọ này không còn phòng trống</div>
                                 )}
                             </div>
-                            <a href="/rooms" className="mt-4 w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors">
+                            <Link href="/rooms" className="mt-4 w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors">
                                 Xem tất cả phòng trống →
-                            </a>
+                            </Link>
                         </div>
                     ) : (
                         <div className="p-5">

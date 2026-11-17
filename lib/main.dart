@@ -56,7 +56,7 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _applyRememberLogin() async {
     final prefs = await SharedPreferences.getInstance();
-    final remember = prefs.getBool('remember_login') ?? false;
+    final remember = prefs.getBool('remember_login') ?? true;
     if (!remember && FirebaseAuth.instance.currentUser != null) {
       await FirebaseAuth.instance.signOut();
     }

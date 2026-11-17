@@ -78,10 +78,21 @@ class FirebaseService {
   Future<void> deleteRoom(String id) async {
     final roomRef = await _roomRefByKey(id);
     final roomDoc = await roomRef.get();
-    if (roomDoc.exists && Room.fromFirestore(roomDoc.data()!, roomDoc.id).isRented) {
-      throw Exception('Không thể xóa phòng đang thuê');
+    final roomKeys = <String>{id};
+    if (roomDoc.exists && roomDoc.data() != null) {
+      final room = Room.fromFirestore(roomDoc.data()!, roomDoc.id);
+      if (room.isRented) {
+        throw Exception('Không thể xóa phòng đang thuê');
+      }
+      roomKeys.add(room.id);
+      roomKeys.add(room.roomKey);
     }
-    if (await roomHasActiveContract(id)) {
+    final snap = await _fs.collection('${base}contracts').get();
+    final hasActive = snap.docs.any((doc) {
+      final contract = Contract.fromFirestore(doc.data(), doc.id);
+      return roomKeys.contains(contract.roomId) && contract.isActive;
+    });
+    if (hasActive) {
       throw Exception('Không thể xóa phòng đang có hợp đồng hiệu lực');
     }
     await roomRef.delete();
@@ -108,7 +119,10 @@ class FirebaseService {
       _fs.collection('${base}tenants').snapshots().map((s) =>
           s.docs.map((d) => Tenant.fromFirestore(d.data(), d.id)).toList());
 
-  Future<void> addTenant(Tenant t) => _fs.collection('${base}tenants').add(t.toMap());
+  Future<String> addTenant(Tenant t) async {
+    final doc = await _fs.collection('${base}tenants').add(t.toMap());
+    return doc.id;
+  }
   Future<void> updateTenant(Tenant t) => _fs.collection('${base}tenants').doc(t.id).set(t.toMap());
   Future<void> updateTenantImageUrls(String tenantId, List<String> imageUrls) async {
     final tenantRef = await _tenantRefByKey(tenantId);
@@ -146,6 +160,12 @@ class FirebaseService {
           s.docs.map((d) => Contract.fromFirestore(d.data(), d.id)).toList());
 
   Future<void> addContract(Contract c) async {
+    if (await roomHasActiveContract(c.roomId)) {
+      throw Exception('Phòng này đang có hợp đồng hiệu lực');
+    }
+    if (await tenantHasActiveContract(c.tenantId)) {
+      throw Exception('Khách thuê này đang đứng tên một hợp đồng hiệu lực khác');
+    }
     final batch = _fs.batch();
     final contractRef = _fs.collection('${base}contracts').doc();
     batch.set(contractRef, {...c.toMap(), 'contractId': contractRef.id});
@@ -190,7 +210,7 @@ class FirebaseService {
     });
   }
 
-  Future<MeterReading> getLastMeterForRoom(String roomId) async {
+  Future<MeterReading> getLastMeterForRoom(String roomId, {String? beforeMonth}) async {
     final roomRef = await _roomRefByKey(roomId);
     final roomDoc = await roomRef.get();
     final roomKeys = <String>{roomId};
@@ -212,10 +232,12 @@ class FirebaseService {
     if (contractKeys.isEmpty) return const MeterReading();
 
     final billsSnap = await _fs.collection('${base}bills').get();
+    final targetMonth = beforeMonth == null ? null : _monthSortValue(beforeMonth);
     Bill? latest;
     for (final doc in billsSnap.docs) {
       final bill = Bill.fromFirestore(doc.data(), doc.id);
       if (!contractKeys.contains(bill.contractId) || !bill.meterUpdated) continue;
+      if (targetMonth != null && _billSortValue(bill) >= targetMonth) continue;
       if (latest == null || _billSortValue(bill) > _billSortValue(latest)) {
         latest = bill;
       }
@@ -264,6 +286,9 @@ class FirebaseService {
       'lastElectric': b.newElectric,
       'lastWater': b.newWater,
     });
+    // Chi bao thanh cong sau khi Firestore xac nhan cac thay doi da len Cloud.
+    // Neu dang offline, ham se cho den timeout thay vi de nguoi dung tuong rang da luu.
+    await _fs.waitForPendingWrites().timeout(const Duration(seconds: 20));
   }
 
   Future<void> updateBillStatus(String billId, String status) =>
@@ -325,7 +350,7 @@ class FirebaseService {
 
   Future<void> deleteBill(String id) => _fs.collection('${base}bills').doc(id).delete();
 
-  Future<int> bulkCreateBills(String monthStr, Setting settings) async {
+  Future<int> bulkCreateBills(String monthStr, Setting settings, {DateTime? dueDate}) async {
     // 1. Lay tat ca hop dong dang hieu luc
     final contractsSnap = await _fs.collection('${base}contracts').get();
     final contracts = contractsSnap.docs
@@ -368,7 +393,7 @@ class FirebaseService {
           serviceFee: serviceFee.toDouble(),
           totalAmount: c.rentPrice + serviceFee.toDouble(),
           paymentStatus: 'CHUA_THANH_TOAN',
-          dueDate: DateTime.now().add(const Duration(days: 7)).millisecondsSinceEpoch,
+          dueDate: (dueDate ?? DateTime.now().add(const Duration(days: 7))).millisecondsSinceEpoch,
           meterUpdated: false,
         );
         batch.set(billRef, {...b.toMap(), 'billId': billRef.id});
@@ -376,7 +401,10 @@ class FirebaseService {
       }
     }
     
-    if (count > 0) await batch.commit();
+    if (count > 0) {
+      await batch.commit();
+      await _fs.waitForPendingWrites().timeout(const Duration(seconds: 20));
+    }
     return count;
   }
 
@@ -400,15 +428,19 @@ class FirebaseService {
   }
 
   int _billSortValue(Bill bill) {
-    final normalized = _monthVariants(bill.month)
-        .firstWhere((m) => m.contains('-') && m.split('-').first.length == 4, orElse: () => bill.month);
+    return _monthSortValue(bill.month, fallback: bill.dueDate);
+  }
+
+  int _monthSortValue(String value, {int fallback = 0}) {
+    final normalized = _monthVariants(value)
+        .firstWhere((m) => m.contains('-') && m.split('-').first.length == 4, orElse: () => value);
     final parts = normalized.split('-');
     if (parts.length == 2) {
       final year = int.tryParse(parts[0]) ?? 0;
       final month = int.tryParse(parts[1]) ?? 0;
       return year * 100 + month;
     }
-    return bill.dueDate;
+    return fallback;
   }
 
   Future<DocumentReference<Map<String, dynamic>>> _contractRefByKey(String key) async {

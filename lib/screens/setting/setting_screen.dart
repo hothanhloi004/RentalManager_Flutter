@@ -183,7 +183,7 @@ class _SettingScreenState extends State<SettingScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               const Text('Bật khóa màn hình PIN', style: TextStyle(fontSize: 15)),
-                              Switch(value: _pinEnabled, onChanged: (v) => setState(() => _pinEnabled = v), activeColor: primaryColor),
+                              Switch(value: _pinEnabled, onChanged: (v) => setState(() => _pinEnabled = v), activeThumbColor: primaryColor),
                             ],
                           ),
                           if (_pinEnabled) _field(_pinCtrl, 'Mã PIN (6 chữ số)', type: TextInputType.number, obscure: true),

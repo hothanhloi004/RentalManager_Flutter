@@ -271,6 +271,7 @@ class _ReportScreenState extends State<ReportScreen> {
     final slices = <_RoomStatusSlice>[
       if (s.rentedRooms > 0) _RoomStatusSlice('Đang thuê', s.rentedRooms, AppTheme.primary),
       if (s.vacantRooms > 0) _RoomStatusSlice('Trống', s.vacantRooms, const Color(0xFFE5E7EB)),
+      if (s.maintenanceRooms > 0) _RoomStatusSlice('Bảo trì', s.maintenanceRooms, const Color(0xFFF59E0B)),
     ];
     final selected = _roomPieTouchedIndex >= 0 && _roomPieTouchedIndex < slices.length ? slices[_roomPieTouchedIndex] : null;
 
@@ -331,6 +332,10 @@ class _ReportScreenState extends State<ReportScreen> {
         _roomStatusLegend('Đang thuê', s.rentedRooms, AppTheme.primary),
         const SizedBox(height: 8),
         _roomStatusLegend('Trống', s.vacantRooms, const Color(0xFFCBD5E1)),
+        if (s.maintenanceRooms > 0) ...[
+          const SizedBox(height: 8),
+          _roomStatusLegend('Bảo trì', s.maintenanceRooms, const Color(0xFFF59E0B)),
+        ],
       ],
     );
   }

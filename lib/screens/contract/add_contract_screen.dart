@@ -10,8 +10,9 @@ import '../../utils/price_input_formatter.dart';
 
 class AddContractScreen extends StatefulWidget {
   final String? roomId;
+  final String? tenantId;
 
-  const AddContractScreen({super.key, this.roomId});
+  const AddContractScreen({super.key, this.roomId, this.tenantId});
 
   @override
   State<AddContractScreen> createState() => _AddContractScreenState();
@@ -69,6 +70,9 @@ class _AddContractScreenState extends State<AddContractScreen> {
           if (_selectedRoom != null) {
             _rentPriceCtrl.text = PriceInputFormatter.format(_selectedRoom!.price);
           }
+        }
+        if (widget.tenantId != null) {
+          _selectedTenant = _tenants.where((t) => t.id == widget.tenantId || t.tenantKey == widget.tenantId).firstOrNull;
         }
       });
       if (_selectedRoom != null) {
@@ -170,7 +174,7 @@ class _AddContractScreenState extends State<AddContractScreen> {
                     children: [
                       _sectionCard([
                         DropdownButtonFormField<Room>(
-                          value: _selectedRoom,
+                          initialValue: _selectedRoom,
                           decoration: _inputDeco('Chọn phòng đang trống'),
                           items: _rooms.map((r) => DropdownMenuItem(value: r, child: Text(r.roomName))).toList(),
                           onChanged: _selectRoom,
@@ -186,7 +190,7 @@ class _AddContractScreenState extends State<AddContractScreen> {
                         ),
                         const SizedBox(height: 12),
                         DropdownButtonFormField<Tenant>(
-                          value: _selectedTenant,
+                          initialValue: _selectedTenant,
                           decoration: _inputDeco('Chọn khách hàng thuê'),
                           items: _tenants.map((t) => DropdownMenuItem(value: t, child: Text(t.fullName))).toList(),
                           onChanged: (t) => setState(() => _selectedTenant = t),

@@ -18,12 +18,14 @@ class ReportSummary {
   final List<MonthlyRevenue> months;
   final int rentedRooms;
   final int vacantRooms;
+  final int maintenanceRooms;
   final int totalRooms;
 
   const ReportSummary({
     required this.months,
     required this.rentedRooms,
     required this.vacantRooms,
+    this.maintenanceRooms = 0,
     required this.totalRooms,
   });
 
@@ -70,10 +72,13 @@ class ReportCalculator {
     }
 
     final rented = rooms.where((r) => r.isRented).length;
+    final maintenance = rooms.where((r) => r.isMaintenance).length;
+    final vacant = (rooms.length - rented - maintenance).clamp(0, rooms.length);
     return ReportSummary(
       months: keys.map((k) => byMonth[k]!).toList(),
       rentedRooms: rented,
-      vacantRooms: rooms.length - rented,
+      vacantRooms: vacant,
+      maintenanceRooms: maintenance,
       totalRooms: rooms.length,
     );
   }

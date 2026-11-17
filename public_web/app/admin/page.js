@@ -1,14 +1,21 @@
 'use client';
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { db, auth } from '../../lib/firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
-import { collection, query, getDocs, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, getDocs, onSnapshot, orderBy, doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import * as XLSX from 'xlsx';
+
+const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_SYSTEM_ADMIN_EMAILS || '')
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
 
 export default function AdminDashboardPage() {
     const [user, setUser] = useState(null);
     const [loadingAuth, setLoadingAuth] = useState(true);
+    const [isSystemAdmin, setIsSystemAdmin] = useState(false);
 
     const [stats, setStats] = useState({ rooms: 0, tenants: 0, contracts: 0, bills: 0 });
     const [roomsList, setRoomsList] = useState([]);
@@ -26,14 +33,27 @@ export default function AdminDashboardPage() {
         catch { return new Set(); }
     });
     const [settingData, setSettingData] = useState({});
-    const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'inquiries'
+    const [noticeText, setNoticeText] = useState('');
+    const [savingNotice, setSavingNotice] = useState(false);
+    const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'inquiries' | 'maintenance'
+    const [repairReplies, setRepairReplies] = useState({});
+    const [updatingRepair, setUpdatingRepair] = useState({});
     const [aiAnalysis, setAiAnalysis] = useState('');
     const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
     const [aiReplies, setAiReplies] = useState({}); // { [inquiryId]: text }
     const [aiReplyLoading, setAiReplyLoading] = useState({}); // { [inquiryId]: bool }
 
-    const currentMonthKey = new Date().toISOString().slice(0, 7);
-    const currentMonthUnpaidBills = unpaidBills.filter(b => b.month === currentMonthKey);
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonthNum = now.getMonth() + 1;
+    const currentMonthKey = `${String(currentMonthNum).padStart(2, '0')}/${currentYear}`;
+    const currentMonthKeys = new Set([
+        currentMonthKey,
+        `${currentMonthNum}/${currentYear}`,
+        `${currentYear}-${String(currentMonthNum).padStart(2, '0')}`,
+        `${currentYear}-${currentMonthNum}`,
+    ]);
+    const currentMonthUnpaidBills = unpaidBills.filter(b => currentMonthKeys.has(String(b.month || '').trim()));
     const currentMonthOutstanding = currentMonthUnpaidBills.reduce((sum, bill) => {
         const total = bill.totalAmount || 0;
         const paid = bill.paidAmount || 0;
@@ -93,11 +113,22 @@ export default function AdminDashboardPage() {
     };
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setUser(currentUser);
             setLoadingAuth(false);
             if (currentUser) {
                 fetchLandlordData(currentUser.uid);
+                try {
+                    const emailAllowed = ADMIN_EMAILS.includes(String(currentUser.email || '').toLowerCase());
+                    const roleSnap = await getDoc(doc(db, `roles/${currentUser.uid}`));
+                    const roleData = roleSnap.exists() ? roleSnap.data() : null;
+                    const roleAllowed = roleData?.active === true && ['ADMIN', 'SUPER_ADMIN'].includes(String(roleData?.role || '').toUpperCase());
+                    setIsSystemAdmin(emailAllowed || roleAllowed);
+                } catch {
+                    setIsSystemAdmin(false);
+                }
+            } else {
+                setIsSystemAdmin(false);
             }
         });
         return () => unsubscribe();
@@ -119,6 +150,7 @@ export default function AdminDashboardPage() {
 
     const handleGoogleSignIn = async () => {
         const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
         try {
             await signInWithPopup(auth, provider);
         } catch (error) {
@@ -157,25 +189,39 @@ export default function AdminDashboardPage() {
 
             const parsedBills = billSnap.docs.map(doc => {
                 const data = doc.data();
-                const paidAmount = paymentsByBill[String(data.billId ?? doc.id)] || 0;
+                const paidAmount = paymentsByBill[String(data.billId ?? '')] || paymentsByBill[String(doc.id)] || 0;
                 return { id: doc.id, ...data, paidAmount };
             });
+
+            const isBillPaid = (b) => {
+                const st = String(b.paymentStatus || '').trim().toUpperCase();
+                return st === 'DA_THANH_TOAN' || st === 'PAID';
+            };
 
             setRoomsList(parsedRooms);
             setTenantsList(parsedTenants);
             setContractsList(parsedContracts);
-            setUnpaidBills(parsedBills.filter(b => b.paymentStatus !== 'DA_THANH_TOAN'));
+            setUnpaidBills(parsedBills.filter(b => !isBillPaid(b)));
 
             // Calculate Revenue Data for Chart
-            const paidBills = parsedBills.filter(b => b.paymentStatus === 'DA_THANH_TOAN');
+            const paidBills = parsedBills.filter(b => isBillPaid(b));
             const revMap = {};
             paidBills.forEach(b => {
-                const m = b.month; // e.g. "2026-04"
+                const m = b.month; // e.g. "04/2026" or "2026-04"
                 if (!revMap[m]) revMap[m] = 0;
                 revMap[m] += b.totalAmount || 0;
             });
 
-            const sortedMonths = Object.keys(revMap).sort();
+            const toMonthSortKey = (m) => {
+                const s = String(m || '').trim();
+                if (s.includes('/')) {
+                    const [mm, yy] = s.split('/');
+                    return `${yy || '0000'}-${String(mm || '00').padStart(2, '0')}`;
+                }
+                return s;
+            };
+
+            const sortedMonths = Object.keys(revMap).sort((a, b) => toMonthSortKey(a).localeCompare(toMonthSortKey(b)));
             const revChartData = sortedMonths.map(m => ({
                 name: m,
                 total: revMap[m]
@@ -194,11 +240,13 @@ export default function AdminDashboardPage() {
             try {
                 const [inqSnap, sDoc] = await Promise.all([
                     getDocs(collection(db, `inquiries/${uid}/requests`)),
-                    import('firebase/firestore').then(({ doc: fdoc, getDoc: fgetDoc }) =>
-                        fgetDoc(fdoc(db, `users/${uid}/settings/config`))
-                    ),
+                    getDoc(doc(db, `users/${uid}/settings/config`)),
                 ]);
-                if (sDoc.exists()) setSettingData(sDoc.data());
+                if (sDoc.exists()) {
+                    const sData = sDoc.data();
+                    setSettingData(sData);
+                    setNoticeText(sData.notice || '');
+                }
                 setInquiries(inqSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
                     const ta = a.createdAt?.toMillis?.() || 0;
                     const tb = b.createdAt?.toMillis?.() || 0;
@@ -295,7 +343,7 @@ export default function AdminDashboardPage() {
 
         // Summary row
         const billsToExport = exportMonth === 'ALL' ? unpaidBills : unpaidBills.filter(b => b.month === exportMonth);
-        const totalDebt = billsToExport.reduce((s, b) => s + (b.totalAmount || 0), 0);
+        const totalDebt = billsToExport.reduce((s, b) => s + Math.max((b.totalAmount || 0) - (b.paidAmount || 0), 0), 0);
         doc.setTextColor(30, 30, 30);
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
@@ -397,6 +445,54 @@ export default function AdminDashboardPage() {
         );
     }
 
+    const roomInquiries = inquiries.filter(i => i.type !== 'MAINTENANCE' && i.type !== 'REPORT');
+    const maintenanceTickets = inquiries.filter(i => i.type === 'MAINTENANCE');
+    const pendingMaintenanceCount = maintenanceTickets.filter(t => {
+        const st = String(t.repairStatus || t.status || 'PENDING').toUpperCase();
+        return st !== 'DONE' && st !== 'COMPLETED';
+    }).length;
+
+    const saveHostelNotice = async () => {
+        if (!user) return;
+        setSavingNotice(true);
+        try {
+            await setDoc(doc(db, `users/${user.uid}/settings/config`), {
+                notice: noticeText.trim(),
+                noticeUpdatedAt: serverTimestamp(),
+            }, { merge: true });
+            setSettingData(prev => ({ ...prev, notice: noticeText.trim() }));
+            alert('Đã cập nhật Bảng thông báo khu trọ thành công! Khách thuê sẽ thấy ngay trên Cổng Người Thuê.');
+        } catch (err) {
+            alert('Lỗi lưu thông báo: ' + err.message);
+        } finally {
+            setSavingNotice(false);
+        }
+    };
+
+    const handleUpdateRepairStatus = async (ticket, nextStatus) => {
+        if (!user) return;
+        setUpdatingRepair(prev => ({ ...prev, [ticket.id]: true }));
+        try {
+            const reply = (repairReplies[ticket.id] ?? ticket.landlordReply ?? '').trim();
+            const updatePayload = {
+                repairStatus: nextStatus,
+                status: nextStatus,
+                landlordReply: reply,
+                updatedAt: serverTimestamp(),
+            };
+            await updateDoc(doc(db, `inquiries/${user.uid}/requests/${ticket.id}`), updatePayload);
+            // Sync to users/{uid}/maintenance/{id} so unauthenticated tenants on /tenant can read it immediately
+            await setDoc(doc(db, `users/${user.uid}/maintenance/${ticket.id}`), {
+                ...ticket,
+                ...updatePayload,
+            }, { merge: true });
+        } catch (err) {
+            alert('Lỗi cập nhật: ' + err.message);
+        } finally {
+            setUpdatingRepair(prev => ({ ...prev, [ticket.id]: false }));
+        }
+    };
+
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
             {/* Header */}
@@ -406,11 +502,18 @@ export default function AdminDashboardPage() {
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
                     </div>
                     <div>
-                        <h1 className="font-bold text-xl text-slate-800 tracking-tight">Rental Manager</h1>
+                        <div className="flex items-center gap-2">
+                            <h1 className="font-bold text-xl text-slate-800 tracking-tight">Kênh Chủ Trọ</h1>
+                            {isSystemAdmin && (
+                                <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black uppercase tracking-wider">
+                                    System Admin
+                                </span>
+                            )}
+                        </div>
                         <p className="text-xs text-slate-500 font-medium">Logged in as {user.email}</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-start overflow-x-auto pb-1 sm:pb-0">
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start overflow-x-auto pb-1 sm:pb-0">
                     <div className="flex bg-slate-100 border border-slate-200 p-1 rounded-xl gap-1 shrink-0">
                         <button
                             onClick={() => setActiveTab('dashboard')}
@@ -422,10 +525,25 @@ export default function AdminDashboardPage() {
                             onClick={() => setActiveTab('inquiries')}
                             className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-1.5 ${activeTab === 'inquiries' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            Yêu cầu thuê
-                            {inquiries.filter(i => !readIds.has(i.id)).length > 0 && <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">{inquiries.filter(i => !readIds.has(i.id)).length}</span>}
+                            Khách hỏi thuê
+                            {roomInquiries.filter(i => !readIds.has(i.id)).length > 0 && <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">{roomInquiries.filter(i => !readIds.has(i.id)).length}</span>}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('maintenance')}
+                            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-1.5 ${activeTab === 'maintenance' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Báo sửa chữa
+                            {pendingMaintenanceCount > 0 && <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">{pendingMaintenanceCount}</span>}
                         </button>
                     </div>
+                    {isSystemAdmin && (
+                        <Link
+                            href="/admin/system"
+                            className="px-4 py-2 bg-rose-600 text-white rounded-lg text-sm font-bold hover:bg-rose-700 transition-colors shadow-sm shrink-0 flex items-center gap-1.5"
+                        >
+                            🛡️ Quản Trị Hệ Thống
+                        </Link>
+                    )}
                     <button onClick={handleSignOut} className="px-5 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-sm font-semibold hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm shrink-0">
                         Đăng xuất
                     </button>
@@ -433,12 +551,105 @@ export default function AdminDashboardPage() {
             </header >
 
             <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8">
-                {activeTab === 'inquiries' ? (
+                {activeTab === 'maintenance' ? (
+                    <div>
+                        <div className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3">
+                            <div>
+                                <h2 className="text-3xl font-bold text-slate-900 tracking-tight mb-1">Yêu cầu Sửa chữa & Bảo trì</h2>
+                                <p className="text-slate-500 text-sm">Người thuê gửi báo hỏng thiết bị trực tiếp từ Cổng Người Thuê.</p>
+                            </div>
+                            <button onClick={() => fetchLandlordData(user.uid)} className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-semibold hover:bg-indigo-100 transition-colors flex items-center gap-2">
+                                Làm mới
+                            </button>
+                        </div>
+
+                        {maintenanceTickets.length === 0 ? (
+                            <div className="bg-white border border-slate-200 rounded-2xl p-16 text-center shadow-sm">
+                                <div className="text-5xl mb-4">🛠️</div>
+                                <h3 className="text-xl font-bold text-slate-700 mb-2">Chưa có yêu cầu sửa chữa nào</h3>
+                                <p className="text-slate-400 text-sm">Khi người thuê gửi báo hỏng trên trang Cổng Người Thuê, phiếu yêu cầu sẽ hiển thị tại đây.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                {maintenanceTickets.map(ticket => {
+                                    const st = String(ticket.repairStatus || ticket.status || 'PENDING').toUpperCase();
+                                    const isDone = st === 'DONE' || st === 'COMPLETED';
+                                    const isInProgress = st === 'IN_PROGRESS' || st === 'PROCESSING';
+                                    const badgeText = isDone ? 'ĐÃ HOÀN THÀNH' : isInProgress ? 'ĐANG SỬA CHỮA' : 'CHỜ XỬ LÝ';
+                                    const badgeClass = isDone
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : isInProgress
+                                            ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                            : 'bg-amber-50 text-amber-700 border-amber-200';
+                                    return (
+                                        <div key={ticket.id} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+                                            <div className="flex justify-between items-start gap-2">
+                                                <div>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="font-extrabold text-slate-900 text-lg">{ticket.roomName || 'Phòng thuê'}</span>
+                                                        {ticket.priority === 'URGENT' && (
+                                                            <span className="text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 px-2 py-0.5 rounded-full">
+                                                                🔴 KHẨN CẤP
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-sm text-slate-600 font-semibold mt-0.5">
+                                                        Khách: {ticket.name} · <a href={`tel:${ticket.phone}`} className="text-indigo-600 hover:underline">{ticket.phone}</a>
+                                                    </div>
+                                                </div>
+                                                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${badgeClass}`}>
+                                                    {badgeText}
+                                                </span>
+                                            </div>
+
+                                            <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5">
+                                                <div className="text-xs font-bold text-indigo-600 uppercase mb-1">
+                                                    Hạng mục: {ticket.category || 'Sửa chữa chung'}
+                                                </div>
+                                                <p className="text-sm text-slate-700 whitespace-pre-line">{ticket.description || ticket.note}</p>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                                                    Phản hồi cho khách thuê (hiển thị trên Cổng Người Thuê)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={repairReplies[ticket.id] ?? ticket.landlordReply ?? ''}
+                                                    onChange={e => setRepairReplies(prev => ({ ...prev, [ticket.id]: e.target.value }))}
+                                                    placeholder="VD: Chiều 15h thợ điện qua kiểm tra nhé..."
+                                                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                />
+                                            </div>
+
+                                            <div className="flex gap-2 pt-1">
+                                                <button
+                                                    onClick={() => handleUpdateRepairStatus(ticket, 'IN_PROGRESS')}
+                                                    disabled={updatingRepair[ticket.id]}
+                                                    className="flex-1 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-xl text-xs font-bold transition-colors disabled:opacity-50"
+                                                >
+                                                    🔧 Đang sửa chữa
+                                                </button>
+                                                <button
+                                                    onClick={() => handleUpdateRepairStatus(ticket, 'DONE')}
+                                                    disabled={updatingRepair[ticket.id]}
+                                                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors disabled:opacity-50"
+                                                >
+                                                    ✅ Đã hoàn thành
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                ) : activeTab === 'inquiries' ? (
                     <div>
                         <div className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3">
                             <div>
                                 <h2 className="text-3xl font-bold text-slate-900 tracking-tight mb-1">Yêu cầu Xem Phòng</h2>
-                                <p className="text-slate-500 text-sm">{inquiries.length} yêu cầu từ khách vãng lai.</p>
+                                <p className="text-slate-500 text-sm">{roomInquiries.length} yêu cầu từ khách vãng lai.</p>
                             </div>
                             <button onClick={() => fetchLandlordData(user.uid)} className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-semibold hover:bg-indigo-100 transition-colors flex items-center gap-2">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -446,7 +657,7 @@ export default function AdminDashboardPage() {
                             </button>
                         </div>
 
-                        {inquiries.length === 0 ? (
+                        {roomInquiries.length === 0 ? (
                             <div className="bg-white border border-slate-200 rounded-2xl p-16 text-center shadow-sm">
                                 <div className="text-5xl mb-4">📭</div>
                                 <h3 className="text-xl font-bold text-slate-700 mb-2">Chưa có yêu cầu nào</h3>
@@ -454,7 +665,7 @@ export default function AdminDashboardPage() {
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                                {inquiries.map(inq => {
+                                {roomInquiries.map(inq => {
                                     const isRead = readIds.has(inq.id);
                                     const markRead = () => {
                                         const next = new Set(readIds).add(inq.id);
@@ -495,7 +706,7 @@ export default function AdminDashboardPage() {
                                                         try {
                                                             const text = await callGemini('reply_suggestion', {
                                                                 inquiry: inq,
-                                                                room: roomsList.find(r => r.id === inq.roomId),
+                                                                room: findRoom(inq.roomId || inq.roomDocId || inq.roomName),
                                                                 hostelName: settingData.hostelName,
                                                                 landlordName: settingData.landlordName,
                                                             });
@@ -688,6 +899,35 @@ export default function AdminDashboardPage() {
                                     )}
                                 </div>
 
+                                {/* Hostel Notice Board Widget */}
+                                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-6 mb-8 shadow-sm">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-amber-500 p-2 rounded-lg text-white">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-amber-900 text-base">Bảng Thông Báo Chung Khu Trọ</h3>
+                                                <p className="text-xs text-amber-700">Thông báo này sẽ hiển thị ngay trên đầu trang Cổng Người Thuê khi khách tra cứu.</p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={saveHostelNotice}
+                                            disabled={savingNotice}
+                                            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded-lg text-xs font-bold transition-colors shrink-0"
+                                        >
+                                            {savingNotice ? 'Đang lưu...' : '📌 Đăng / Cập nhật thông báo'}
+                                        </button>
+                                    </div>
+                                    <textarea
+                                        rows={2}
+                                        value={noticeText}
+                                        onChange={e => setNoticeText(e.target.value)}
+                                        placeholder="VD: Thông báo đóng tiền trọ trước ngày 05 hàng tháng. Chủ nhật tuần này (15/11) khu trọ vệ sinh bồn nước từ 8h - 10h sáng..."
+                                        className="w-full px-4 py-2.5 bg-white border border-amber-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                                    />
+                                </div>
+
                                 {/* Four Split Data Tables */}
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                                     {/* Rooms Table */}
@@ -711,8 +951,8 @@ export default function AdminDashboardPage() {
                                                             <td className="px-5 py-3 font-semibold text-slate-800">{r.roomName}</td>
                                                             <td className="px-5 py-3 font-mono text-slate-600">{nf.format(r.price)}đ</td>
                                                             <td className="px-5 py-3 text-right">
-                                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${r.status === 'TRONG' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>
-                                                                    {r.status === 'TRONG' ? 'Trống' : 'Đang thuê'}
+                                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${r.status === 'TRONG' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : r.status === 'BAO_TRI' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>
+                                                                    {r.status === 'TRONG' ? 'Trống' : r.status === 'BAO_TRI' ? 'Bảo trì' : 'Đang thuê'}
                                                                 </span>
                                                             </td>
                                                         </tr>
@@ -765,7 +1005,7 @@ export default function AdminDashboardPage() {
                                                                 <td className="px-4 py-3 font-bold text-slate-700 text-xs">{b.month}</td>
                                                                 <td className="px-4 py-3 font-semibold text-slate-800 text-sm">{room}</td>
                                                                 <td className="px-4 py-3 text-slate-600 text-sm">{tenant}</td>
-                                                                <td className="px-4 py-3 font-mono font-bold text-red-600">{nf.format(b.totalAmount)}đ</td>
+                                                                <td className="px-4 py-3 font-mono font-bold text-red-600">{nf.format(Math.max((b.totalAmount || 0) - (b.paidAmount || 0), 0))}đ</td>
                                                                 <td className="px-4 py-3 text-right">
                                                                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${b.paymentStatus === 'DONG_THIEU' ? 'bg-orange-50 text-orange-600 border border-orange-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
                                                                         {b.paymentStatus === 'DONG_THIEU' ? 'ĐÓNG THIẾU' : 'CHƯA TRẢ'}

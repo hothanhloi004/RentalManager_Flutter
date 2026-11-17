@@ -11,7 +11,8 @@ function removeAccents(str) {
 
 function isVacantRoom(room) {
     const status = String(room?.status || '').trim().toUpperCase();
-    return status === 'TRONG' || status === 'EMPTY' || status === 'AVAILABLE';
+    // Support all known vacant status values from both Android & Flutter versions
+    return status === 'TRONG' || status === 'EMPTY' || status === 'AVAILABLE' || status === '';
 }
 
 // ─── Contact Modal ────────────────────────────────────────────────────────────
@@ -35,7 +36,6 @@ function ContactModal({ room, onClose }) {
                 createdAt: serverTimestamp(),
                 status: 'NEW',
             });
-            // Gọi API gửi Push Notification cho chủ nhà (vẫn sẽ gửi thành công kể cả chủ nhà chưa cung cấp key, api trả về catch)
             try {
                 await fetch('/api/notify', {
                     method: 'POST',
@@ -139,6 +139,7 @@ function RoomCard({ room, nf, onContact }) {
                     alt={room.roomName || room.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     loading="lazy"
+                    onError={e => { e.currentTarget.src = PLACEHOLDER_IMG; }}
                 />
             </Link>
             <div className="p-5 flex-1 flex flex-col">
@@ -146,6 +147,25 @@ function RoomCard({ room, nf, onContact }) {
                 <div className="text-2xl font-black text-slate-900 mb-3 font-mono tracking-tight">
                     {nf.format(room.price)}<span className="text-sm font-medium text-slate-400 font-sans tracking-normal ml-1">đ/tháng</span>
                 </div>
+                {(room.area > 0 || room.floor > 0 || (Array.isArray(room.amenities) && room.amenities.length > 0)) && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                        {room.area > 0 && (
+                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-md text-xs font-semibold">
+                                {room.area} m²
+                            </span>
+                        )}
+                        {room.floor > 0 && (
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md text-xs font-semibold">
+                                Tầng {room.floor}
+                            </span>
+                        )}
+                        {Array.isArray(room.amenities) && room.amenities.slice(0, 4).map((am, idx) => (
+                            <span key={idx} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md text-xs font-semibold">
+                                {am}
+                            </span>
+                        ))}
+                    </div>
+                )}
                 <p className="text-slate-500 text-sm mb-5 line-clamp-2 flex-1">{room.note || room.description || 'Chưa có mô tả từ chủ nhà.'}</p>
 
                 <div className="grid grid-cols-2 gap-2 mb-5">
@@ -160,35 +180,13 @@ function RoomCard({ room, nf, onContact }) {
                     </div>
                     <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex items-center gap-2.5">
                         <div className="text-sky-500 bg-sky-50 rounded-lg p-1.5">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 18v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m8-11a4 4 0 100-8 4 4 0 000 8zM19 12a10.001 10.001 0 011 20H4a10 10 0 011-20" /></svg>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>
                         </div>
                         <div>
                             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tiền Nước</div>
                             <div className="text-sm font-bold text-slate-700">{room.waterPrice ? nf.format(room.waterPrice) : '70.000'}đ</div>
                         </div>
                     </div>
-                    {(room.serviceFee > 0 || room.trashFee > 0) && (
-                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex items-center gap-2.5 col-span-2">
-                            <div className="text-emerald-500 bg-emerald-50 rounded-lg p-1.5">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                            </div>
-                            <div className="flex-1 flex justify-between items-center">
-                                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Dịch vụ &amp; Rác</div>
-                                <div className="text-sm font-bold text-slate-700">+{nf.format((room.serviceFee || 0) + (room.trashFee || 0))}đ</div>
-                            </div>
-                        </div>
-                    )}
-                    {room.wifiPrice > 0 && (
-                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex items-center gap-2.5 col-span-2">
-                            <div className="text-violet-500 bg-violet-50 rounded-lg p-1.5">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" /></svg>
-                            </div>
-                            <div className="flex-1 flex justify-between items-center">
-                                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Wi-Fi</div>
-                                <div className="text-sm font-bold text-slate-700">+{nf.format(room.wifiPrice)}đ</div>
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 {(room.hostelName || room.landlordName || room.hostelAddress || room.landlordPhone) && (
@@ -205,11 +203,37 @@ function RoomCard({ room, nf, onContact }) {
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                         Xem chi tiết
                     </Link>
-                    <button onClick={() => onContact(room)} className="py-3 bg-slate-900 hover:bg-slate-700 text-white rounded-xl font-bold transition-colors text-sm shadow-sm flex items-center justify-center gap-2">
+                    <button onClick={() => onContact(room)} className="py-3 bg-slate-900 hover:bg-indigo-600 text-white rounded-xl font-bold transition-colors text-sm shadow-sm flex items-center justify-center gap-2">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
                         Liên hệ
                     </button>
                 </div>
+                <button
+                    onClick={async () => {
+                        const reason = prompt(`Báo cáo phòng "${room.roomName || room.name}" vi phạm hoặc sai sự thật.\nNhập lý do báo cáo với Quản trị viên hệ thống:`);
+                        if (!reason || !reason.trim()) return;
+                        try {
+                            await addDoc(collection(db, `inquiries/${room.uid}/requests`), {
+                                type: 'REPORT',
+                                roomId: room.roomId || room.roomKey || room.id,
+                                roomDocId: room.id,
+                                roomName: room.roomName || room.name || '',
+                                name: 'Người dùng báo cáo vi phạm',
+                                phone: 'Báo cáo hệ thống',
+                                note: reason.trim(),
+                                status: 'REPORTED',
+                                adminStatus: 'REPORTED',
+                                createdAt: serverTimestamp(),
+                            });
+                            alert('Đã gửi báo cáo vi phạm tới Quản trị viên hệ thống. Cảm ơn phản hồi của bạn!');
+                        } catch (e) {
+                            alert('Không thể gửi báo cáo: ' + e.message);
+                        }
+                    }}
+                    className="mt-2.5 text-[11px] text-slate-400 hover:text-rose-600 font-semibold flex items-center justify-center gap-1 transition-colors"
+                >
+                    🚩 Báo cáo tin đăng sai sự thật / đã cho thuê
+                </button>
             </div>
         </div>
     );
@@ -219,6 +243,7 @@ function RoomCard({ room, nf, onContact }) {
 export default function PublicRoomsPage() {
     const [rooms, setRooms] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState('');
     const [search, setSearch] = useState('');
     const [addressSearch, setAddressSearch] = useState('');
     const [selectedDistrict, setSelectedDistrict] = useState('');
@@ -226,7 +251,10 @@ export default function PublicRoomsPage() {
     const [sortBy, setSortBy] = useState('default');
     const [contactRoom, setContactRoom] = useState(null);
 
-    useEffect(() => {
+    const doFetch = () => {
+        setLoading(true);
+        setFetchError('');
+
         async function fetchRooms() {
             try {
                 const q = query(collectionGroup(db, 'rooms'));
@@ -235,9 +263,9 @@ export default function PublicRoomsPage() {
                 const allRooms = snapshot.docs.map(d => {
                     const uid = d.ref.path.split('/')[1];
                     return { id: d.id, uid, ...d.data() };
-                }).filter(room => isVacantRoom(room));
+                }).filter(room => isVacantRoom(room) && room.adminHidden !== true);
 
-                // Dedup: nếu cùng uid+id thì chỉ giữ 1 (lấy bản có imageUrl trước)
+                // Dedup by uid+id
                 const seenKeys = new Set();
                 const rawRooms = [];
                 for (const room of allRooms) {
@@ -255,7 +283,7 @@ export default function PublicRoomsPage() {
                     if (sDoc.exists()) settingsMap[uid] = sDoc.data();
                 }));
 
-                const roomList = await Promise.all(rawRooms.map(async r => {
+                const roomList = rawRooms.map(r => {
                     const s = settingsMap[r.uid] || {};
                     let finalImageUrl = r.imageUrl || r.imgUrl || r.images || r.image || null;
 
@@ -267,15 +295,14 @@ export default function PublicRoomsPage() {
                         wifiPrice: s.wifiPrice || null,
                         serviceFee: s.serviceFee || null,
                         trashFee: s.trashFee || null,
-                        hostelName: s.hostelName || null,
-                        landlordName: s.landlordName || null,
-                        landlordPhone: s.landlordPhone || null,
-                        hostelAddress: s.hostelAddress || null
+                        hostelName: s.hostelName || s.motelName || null,
+                        landlordName: s.landlordName || s.ownerName || null,
+                        landlordPhone: s.landlordPhone || s.ownerPhone || null,
+                        hostelAddress: s.hostelAddress || s.address || null,
                     };
-                }));
+                });
 
-                // Dedup lần 2: xử lý trường hợp cùng phòng nhưng khác UID
-                // (xảy ra khi user backup dữ liệu dưới 2 tài khoản Firebase khác nhau)
+                // Dedup by address+roomName
                 const seenRoomKeys = new Set();
                 const dedupedList = [];
                 for (const room of roomList) {
@@ -290,7 +317,6 @@ export default function PublicRoomsPage() {
                         });
                         if (idx !== -1) {
                             const existing = dedupedList[idx];
-                            // Ưu tiên bản có SĐT hoặc bản có Ảnh thực tế
                             if (room.landlordPhone && !existing.landlordPhone) {
                                 dedupedList[idx] = room;
                             } else if (room.images && !existing.images) {
@@ -303,19 +329,24 @@ export default function PublicRoomsPage() {
                 setRooms(dedupedList);
             } catch (e) {
                 console.error('Lỗi xem phòng', e);
+                setFetchError('Không thể tải danh sách phòng. Vui lòng thử lại sau.');
             } finally {
                 setLoading(false);
             }
         }
         fetchRooms();
+    };
+
+    useEffect(() => {
+        const timer = setTimeout(doFetch, 0);
+        return () => clearTimeout(timer);
     }, []);
 
-    // Build district list dynamically from loaded rooms
+    // Build district list dynamically
     const districts = useMemo(() => {
         const set = new Set();
         rooms.forEach(r => {
             if (r.hostelAddress) {
-                // Extract last 2 comma-separated parts as district hint
                 const parts = r.hostelAddress.split(',');
                 const district = parts[parts.length - 1]?.trim();
                 if (district) set.add(district);
@@ -357,51 +388,37 @@ export default function PublicRoomsPage() {
                 <h1 className="text-4xl md:text-5xl font-extrabold mb-3 text-slate-900 tracking-tight">
                     Phòng Trống Cho Thuê
                 </h1>
-                <p className="text-slate-500 max-w-xl mx-auto mb-8">
+                <p className="text-slate-500 max-w-xl mx-auto mb-2">
                     Danh sách phòng trọ, căn hộ, studio đang trống từ mạng lưới chủ nhà sử dụng Rental Manager.
                 </p>
+                {!loading && !fetchError && (
+                    <p className="text-indigo-600 font-bold text-sm mb-6">
+                        🏠 {rooms.length} phòng đang trống trên hệ thống
+                    </p>
+                )}
+                {loading && <p className="text-slate-400 text-sm mb-6">Đang tải danh sách phòng...</p>}
 
                 {/* Search Bar Row */}
                 <div className="max-w-3xl mx-auto flex flex-col sm:flex-row gap-3 mb-4">
-                    {/* Room name search */}
                     <div className="relative flex-1">
                         <svg className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                        <input
-                            type="text"
-                            placeholder="Tìm tên phòng..."
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
+                        <input type="text" placeholder="Tìm tên phòng..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                     </div>
-                    {/* Address keyword search */}
                     <div className="relative flex-1">
                         <svg className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                        <input
-                            type="text"
-                            placeholder="Tìm theo địa chỉ, khu vực..."
-                            value={addressSearch}
-                            onChange={e => setAddressSearch(e.target.value)}
-                            className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
+                        <input type="text" placeholder="Tìm theo địa chỉ, khu vực..." value={addressSearch} onChange={e => setAddressSearch(e.target.value)} className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                     </div>
                 </div>
 
                 {/* Filter Row */}
                 <div className="max-w-3xl mx-auto flex flex-wrap gap-2 justify-center">
-                    {/* District filter */}
                     {districts.length > 0 && (
-                        <select
-                            value={selectedDistrict}
-                            onChange={e => setSelectedDistrict(e.target.value)}
-                            className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-500 cursor-pointer"
-                        >
+                        <select value={selectedDistrict} onChange={e => setSelectedDistrict(e.target.value)} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-500 cursor-pointer">
                             <option value="">Tất cả khu vực</option>
                             {districts.map(d => <option key={d} value={d}>{d}</option>)}
                         </select>
                     )}
 
-                    {/* Price filter chips */}
                     {[
                         { label: 'Tất cả mức giá', value: '' },
                         { label: 'Dưới 2 triệu', value: 'lt2' },
@@ -409,43 +426,25 @@ export default function PublicRoomsPage() {
                         { label: '4 – 6 triệu', value: '4to6' },
                         { label: 'Trên 6 triệu', value: 'gt6' },
                     ].map(opt => (
-                        <button
-                            key={opt.value}
-                            onClick={() => setPriceRange(opt.value)}
-                            className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors shadow-sm ${priceRange === opt.value
-                                ? 'bg-slate-900 text-white border-slate-900'
-                                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:text-slate-900'}`}
-                        >
+                        <button key={opt.value} onClick={() => setPriceRange(opt.value)} className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors shadow-sm ${priceRange === opt.value ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:text-slate-900'}`}>
                             {opt.label}
                         </button>
                     ))}
 
-                    {/* Sort chips */}
                     <div className="flex gap-1.5 items-center">
                         <span className="text-xs text-slate-400 font-medium px-1">Sắp xếp:</span>
                         {[
-                            { label: 'Thấp nhất', value: 'price-asc', icon: <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg> },
-                            { label: 'Cao nhất', value: 'price-desc', icon: <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" /></svg> },
+                            { label: 'Thấp nhất', value: 'price-asc' },
+                            { label: 'Cao nhất', value: 'price-desc' },
                         ].map(opt => (
-                            <button
-                                key={opt.value}
-                                onClick={() => setSortBy(sortBy === opt.value ? 'default' : opt.value)}
-                                className={`px-3 py-2 rounded-xl border text-sm font-medium transition-colors shadow-sm flex items-center gap-1 ${sortBy === opt.value
-                                    ? 'bg-slate-900 text-white border-slate-900'
-                                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
-                            >
-                                {opt.icon}
+                            <button key={opt.value} onClick={() => setSortBy(sortBy === opt.value ? 'default' : opt.value)} className={`px-3 py-2 rounded-xl border text-sm font-medium transition-colors shadow-sm ${sortBy === opt.value ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}>
                                 {opt.label}
                             </button>
                         ))}
                     </div>
 
-                    {/* Clear filters */}
                     {hasFilter && (
-                        <button
-                            onClick={() => { setSearch(''); setAddressSearch(''); setSelectedDistrict(''); setPriceRange(''); setSortBy('default'); }}
-                            className="px-4 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 text-sm font-medium hover:bg-rose-100 transition-colors shadow-sm flex items-center gap-1.5"
-                        >
+                        <button onClick={() => { setSearch(''); setAddressSearch(''); setSelectedDistrict(''); setPriceRange(''); setSortBy('default'); }} className="px-4 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 text-sm font-medium hover:bg-rose-100 transition-colors shadow-sm flex items-center gap-1.5">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             Xoá bộ lọc
                         </button>
@@ -455,11 +454,20 @@ export default function PublicRoomsPage() {
 
             {/* Results */}
             <div className="max-w-6xl mx-auto px-4 py-10">
-                {loading ? (
+                {fetchError ? (
+                    <div className="text-center py-20">
+                        <div className="text-6xl mb-4">⚠️</div>
+                        <h3 className="text-xl font-bold text-slate-700 mb-2">Không thể tải dữ liệu</h3>
+                        <p className="text-slate-500 text-sm mb-6">{fetchError}</p>
+                        <button onClick={doFetch} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold text-sm hover:bg-indigo-700 transition-colors">
+                            Thử lại
+                        </button>
+                    </div>
+                ) : loading ? (
                     <>
                         <div className="h-5 bg-slate-200 rounded w-40 mb-6 animate-pulse" />
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
+                            {[1, 2, 3, 4, 5, 6].map(i => <SkeletonCard key={i} />)}
                         </div>
                     </>
                 ) : (
@@ -467,7 +475,9 @@ export default function PublicRoomsPage() {
                         <p className="text-slate-500 text-sm mb-6">
                             {filtered.length > 0
                                 ? <><span className="font-semibold text-slate-700">{filtered.length}</span> phòng đang trống{hasFilter ? ' (đã lọc)' : ''}</>
-                                : <span className="text-rose-500">Không tìm thấy phòng phù hợp với bộ lọc hiện tại.</span>
+                                : rooms.length === 0
+                                    ? <span className="text-amber-600">Hiện chưa có phòng trống nào trên hệ thống. Vui lòng quay lại sau!</span>
+                                    : <span className="text-rose-500">Không tìm thấy phòng phù hợp với bộ lọc hiện tại.</span>
                             }
                         </p>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -476,7 +486,7 @@ export default function PublicRoomsPage() {
                             ))}
                         </div>
 
-                        {filtered.length === 0 && (
+                        {filtered.length === 0 && rooms.length > 0 && (
                             <div className="text-center py-20">
                                 <div className="text-6xl mb-4">🔍</div>
                                 <h3 className="text-xl font-bold text-slate-700 mb-2">Không có kết quả</h3>

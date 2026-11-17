@@ -4,6 +4,7 @@ import '../../models/contract_model.dart';
 import '../../models/room_model.dart';
 import '../../models/tenant_model.dart';
 import '../../services/firebase_service.dart';
+import '../../utils/pdf_helper.dart';
 import 'add_contract_screen.dart';
 import '../../utils/string_utils.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -239,6 +240,33 @@ class _ContractListScreenState extends State<ContractListScreen> {
                                           ),
                                           const Spacer(),
                                           IconButton(
+                                            tooltip: 'In / Xuất PDF Hợp đồng',
+                                            onPressed: () async {
+                                              try {
+                                                final setting = await _service.getSettings();
+                                                final r = room ?? Room(id: c.roomId, roomName: 'Phòng ${c.roomId}', price: c.rentPrice);
+                                                final t = tenant ?? Tenant(id: c.tenantId, fullName: 'Khách thuê', phone: '', cccd: '', address: '');
+                                                final assets = await _service.getAssetsByRoom(r.roomKey).first;
+                                                await InvoicePdfHelper.generateContractPdf(
+                                                  contract: c,
+                                                  room: r,
+                                                  tenant: t,
+                                                  setting: setting,
+                                                  assets: assets,
+                                                );
+                                              } catch (e) {
+                                                if (!context.mounted) return;
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+                                                );
+                                              }
+                                            },
+                                            icon: const Icon(Icons.picture_as_pdf_outlined, color: Color(0xFFEF4444), size: 22),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Gọi khách thuê',
                                             onPressed: () async {
                                               final phone = tenant?.phone;
                                               if (phone != null && phone.isNotEmpty) {
@@ -246,9 +274,9 @@ class _ContractListScreenState extends State<ContractListScreen> {
                                                 if (await canLaunchUrl(uri)) await launchUrl(uri);
                                               }
                                             },
-                                            icon: const Icon(Icons.phone_in_talk_rounded, color: primaryColor, size: 24),
+                                            icon: const Icon(Icons.phone_in_talk_rounded, color: primaryColor, size: 22),
                                             padding: EdgeInsets.zero,
-                                            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                            constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
                                           ),
                                         ],
                                       ),
@@ -281,7 +309,7 @@ class _ContractListScreenState extends State<ContractListScreen> {
         selected: isSelected,
         onSelected: (_) => setState(() => _currentFilter = value),
         backgroundColor: Colors.white,
-        selectedColor: const Color(0xFFBFF7F4),
+        selectedColor: const Color(0xFFEEEDFF),
         checkmarkColor: primaryColor,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         visualDensity: VisualDensity.compact,
@@ -290,7 +318,7 @@ class _ContractListScreenState extends State<ContractListScreen> {
           fontSize: 12,
           fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
         ),
-        shape: StadiumBorder(side: BorderSide(color: isSelected ? const Color(0xFFBFF7F4) : Colors.grey.shade200)),
+        shape: StadiumBorder(side: BorderSide(color: isSelected ? primaryColor : Colors.grey.shade200)),
       ),
     );
   }

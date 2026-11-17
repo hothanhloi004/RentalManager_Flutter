@@ -131,7 +131,10 @@ class _AddBillScreenState extends State<AddBillScreen> {
         meterUpdated: true,
       );
       
-      await _service.addBill(bill);
+      await _service.addBill(bill).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw Exception('Kết nối Firebase quá lâu. Vui lòng kiểm tra mạng rồi thử lại.'),
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Đã lưu hóa đơn'), backgroundColor: Color(0xFF16A34A)),
@@ -171,7 +174,13 @@ class _AddBillScreenState extends State<AddBillScreen> {
     _calculate();
 
     try {
-      final meter = await _service.getLastMeterForRoom(contract.roomId);
+      final meter = await _service.getLastMeterForRoom(
+        contract.roomId,
+        beforeMonth: _monthCtrl.text.trim(),
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw Exception('Không lấy được chỉ số cũ. Vui lòng kiểm tra mạng.'),
+      );
       if (!mounted || token != _meterLoadToken || _selectedContract?.id != contract.id) return;
       setState(() {
         _oldElecCtrl.text = meter.electric.toString();
@@ -228,7 +237,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                     _sectionTitle('CHỌN PHÒNG & THÁNG'),
                     _card([
                       DropdownButtonFormField<Contract>(
-                        value: _selectedContract,
+                        initialValue: _selectedContract,
                         decoration: _inputDeco('Chọn phòng đang thuê'),
                         items: _contracts.map((c) {
                           final room = _rooms.firstWhere((r) => r.id == c.roomId || r.roomKey == c.roomId, orElse: () => Room(id: '', roomName: '?', price: 0));
@@ -243,6 +252,12 @@ class _AddBillScreenState extends State<AddBillScreen> {
                         decoration: _inputDeco('Tháng thanh toán (MM/YYYY)'),
                         validator: _validateMonth,
                         onChanged: (_) => _calculate(),
+                        onEditingComplete: () {
+                          FocusScope.of(context).unfocus();
+                          if (_selectedContract != null) {
+                            _selectContract(_selectedContract);
+                          }
+                        },
                       ),
                     ]),
 
@@ -274,7 +289,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                         title: Text(DateFormat('dd/MM/yyyy').format(_dueDate), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         trailing: const Icon(Icons.calendar_month_rounded, color: primaryColor),
                         onTap: () async {
-                          final p = await showDatePicker(context: context, initialDate: _dueDate, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                          final p = await showDatePicker(context: context, initialDate: _dueDate, firstDate: DateTime(2000), lastDate: DateTime.now().add(const Duration(days: 365)));
                           if (p != null) setState(() => _dueDate = p);
                         },
                       ),
@@ -335,7 +350,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
       border: Border.all(color: const Color(0xFFF3F4F6)),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))],
+      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2))],
     ),
     child: Column(children: children),
   );

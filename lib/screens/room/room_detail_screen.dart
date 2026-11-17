@@ -8,6 +8,7 @@ import '../../services/firebase_service.dart';
 import '../../widgets/room_photo_gallery.dart';
 import '../contract/add_contract_screen.dart';
 import 'add_edit_room_screen.dart';
+import 'asset_list_screen.dart';
 
 class RoomDetailScreen extends StatefulWidget {
   final Room room;
@@ -139,12 +140,53 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   ),
                   if (_currentRoom.area > 0) ...[
                     _divider(),
-                    _infoRow(Icons.square_foot_rounded, 'Phòng diện tích ${_currentRoom.area} m²', fontSize: 14),
+                    _infoRow(Icons.square_foot_rounded, 'Diện tích: ${_currentRoom.area} m²', fontSize: 14),
+                  ],
+                  if (_currentRoom.floor > 0) ...[
+                    _divider(),
+                    _infoRow(Icons.layers_rounded, 'Tầng: ${_currentRoom.floor}', fontSize: 14),
+                  ],
+                  if (_currentRoom.amenities.isNotEmpty) ...[
+                    _divider(),
+                    _infoRow(Icons.verified_outlined, 'Tiện ích: ${_currentRoom.amenities.join(', ')}', fontSize: 14),
                   ],
                   if (_currentRoom.note.isNotEmpty) ...[
                     _divider(),
                     _infoRow(Icons.notes_rounded, _currentRoom.note, fontSize: 14),
                   ],
+                  _divider(),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AssetListScreen(
+                          roomId: _currentRoom.roomKey,
+                          roomName: _currentRoom.roomName,
+                        ),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.chair_outlined, color: primaryColor, size: 20),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Quản lý tài sản & thiết bị phòng',
+                              style: TextStyle(
+                                color: primaryColor,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right_rounded, color: primaryColor, size: 22),
+                        ],
+                      ),
+                    ),
+                  ),
                   if (!isRented) ...[
                     const SizedBox(height: 12),
                     SizedBox(
@@ -154,7 +196,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                         onPressed: () => Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => AddContractScreen(roomId: _currentRoom.roomKey)),
-                        ),
+                        ).then((_) => _loadRoom()),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primaryColor,
                           foregroundColor: Colors.white,
@@ -265,32 +307,5 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     if (isVacant) return 'Trống';
     if (isMaintenance) return 'Bảo trì';
     return 'Đang thuê';
-  }
-
-  Widget _statusBadge(String status) {
-    final normalized = status.trim().toUpperCase();
-    final isVacant = normalized == 'TRONG' || normalized == 'EMPTY' || normalized == 'AVAILABLE';
-    final isMaintenance = normalized == 'BAO_TRI' || normalized == 'MAINTENANCE';
-    late Color bg;
-    late Color fg;
-    late String label;
-    if (isVacant) {
-      bg = const Color(0xFFDCFCE7);
-      fg = const Color(0xFF166534);
-      label = 'Trống';
-    } else if (isMaintenance) {
-      bg = const Color(0xFFFEF3C7);
-      fg = const Color(0xFF92400E);
-      label = 'Bảo trì';
-    } else {
-      bg = const Color(0xFFFEE2E2);
-      fg = const Color(0xFF991B1B);
-      label = '\u0110ang thu\u00ea';
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
-      child: Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.bold, fontSize: 12)),
-    );
   }
 }

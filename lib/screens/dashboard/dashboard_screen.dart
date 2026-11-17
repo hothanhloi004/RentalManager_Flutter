@@ -138,8 +138,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.filter_list_rounded, color: Colors.white),
-                        tooltip: 'Báo cáo',
+                        icon: const Icon(Icons.bar_chart_rounded, color: Colors.white),
+                        tooltip: 'Báo cáo thống kê',
                         onPressed: () => pushSubPage(context, const ReportScreen()),
                       ),
                     ],
@@ -164,10 +164,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         final rooms = roomSnapshot.data ?? [];
                         final payments = paymentSnapshot.data ?? [];
                         final paidByBill = _paidByBill(payments);
-                        final revenue = bills.fold(0.0, (sum, bill) => sum + _paidAmountFor(bill, paidByBill));
-                        final debt = bills.fold(0.0, (sum, bill) {
+                        final revenue = bills.fold(0.0, (acc, bill) => acc + _paidAmountFor(bill, paidByBill));
+                        final debt = bills.fold(0.0, (acc, bill) {
                           final remaining = bill.totalAmount - _paidAmountFor(bill, paidByBill);
-                          return sum + (remaining <= 0 ? 0 : remaining);
+                          return acc + (remaining <= 0 ? 0 : remaining);
                         });
                         final rented = rooms.where((r) => r.isRented).length;
                         final totalRooms = rooms.length;
